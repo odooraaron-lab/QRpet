@@ -432,3 +432,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--ink); outline: n
 .parent .swatch { width: 52px; height: 52px; }
 .parent .chip { min-height: 44px; }
 .parent .tl li { grid-template-columns: 62px minmax(0, 1fr); }
+
+/* No tap-highlight box or focus ring on the kid screen (phones flash a dark square over tapped buttons). */
+.world, .world * { -webkit-tap-highlight-color: transparent; }
+.world .egg, .world .egg:focus, .world .egg:focus-visible, .world .qr-hit, .world .qr-hit:focus, .world svg:focus { outline: none; }
+.world button:focus:not(:focus-visible) { outline: none; }

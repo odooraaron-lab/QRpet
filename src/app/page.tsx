@@ -20,6 +20,7 @@ export default function Home() {
   const example = BUDDY_DOMAIN ? `teddy.${BUDDY_DOMAIN}` : `${APP_URL.replace(/^https?:\/\//, '')}/b/teddy`;
   const ld = {
     '@context': 'https://schema.org', '@graph': [
+      { '@type': 'WebSite', name: PRODUCT, alternateName: ['myQR QR Buddy', 'QR Buddy by myQR'], url: `${APP_URL}/`, inLanguage: 'en-NZ' },
       { '@type': 'Product', name: PRODUCT, description: 'A gentle digital buddy for 2 to 6 year olds that learns one new thing every day.', brand: { '@type': 'Brand', name: 'myQR' },
         offers: [
           { '@type': 'Offer', price: PRICES.monthly.label.match(/[\d.]+/)?.[0] ?? '4.99', priceCurrency: 'NZD', url: `${APP_URL}/start?plan=monthly`, availability: 'https://schema.org/InStock', areaServed: 'NZ', ...DIGITAL_OFFER },

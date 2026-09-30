@@ -13,7 +13,7 @@ export async function checkName(slug: string): Promise<{ ok: true } | { ok: fals
   if (await nameTaken(slug)) return { ok: false, reason: 'Another buddy already has that name. Try adding a number, like teddy2.' };
   if (PARTY_SITE) {
     try {
-      const r = await fetch(`${PARTY_SITE}/api/slug-status?s=${encodeURIComponent(slug)}`, { cache: 'no-store', signal: AbortSignal.timeout(4000) });
+      const r = await fetch(`${PARTY_SITE}/api/slug-status?s=${encodeURIComponent(slug)}`, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
       if (r.ok && (await r.json()).taken) return { ok: false, reason: 'That address is being used for a party. Try another name.' };
     } catch {
       // The party site didn't answer: allow it, and the party site checks buddies before taking a name too.

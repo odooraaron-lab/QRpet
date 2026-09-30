@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Buddy } from '@/components/Buddy';
 import { SiteFoot, SiteHead } from '@/components/Site';
+import { DIGITAL_OFFER } from '@/lib/seo';
 import { APP_URL, BUDDY_DOMAIN, PRICES, PRODUCT, TRIAL_DAYS } from '@/lib/config';
 
 const FAQ = [
@@ -20,7 +21,10 @@ export default function Home() {
   const ld = {
     '@context': 'https://schema.org', '@graph': [
       { '@type': 'Product', name: PRODUCT, description: 'A gentle digital buddy for 2 to 6 year olds that learns one new thing every day.', brand: { '@type': 'Brand', name: 'myQR' },
-        offers: [{ '@type': 'Offer', price: '4.99', priceCurrency: 'NZD', url: `${APP_URL}/start` }] },
+        offers: [
+          { '@type': 'Offer', price: PRICES.monthly.label.match(/[\d.]+/)?.[0] ?? '4.99', priceCurrency: 'NZD', url: `${APP_URL}/start?plan=monthly`, availability: 'https://schema.org/InStock', areaServed: 'NZ', ...DIGITAL_OFFER },
+          { '@type': 'Offer', price: PRICES.yearly.label.match(/[\d.]+/)?.[0] ?? '39', priceCurrency: 'NZD', url: `${APP_URL}/start?plan=yearly`, availability: 'https://schema.org/InStock', areaServed: 'NZ', ...DIGITAL_OFFER },
+        ] },
       { '@type': 'FAQPage', mainEntity: FAQ.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })) },
     ],
   };

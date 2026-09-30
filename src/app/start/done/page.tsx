@@ -4,8 +4,7 @@ import { SiteFoot, SiteHead } from '@/components/Site';
 import { stripe } from '@/lib/stripe';
 import { getBuddy, type Buddy as B } from '@/lib/buddies';
 import { activateBuddy } from '@/lib/activate';
-import { parentLink } from '@/lib/email';
-import { DEV_CHECKOUT, HQ_PRODUCT } from '@/lib/config';
+import { DEV_CHECKOUT, HQ_PRODUCT, LOGIN_URL, buddyUrl } from '@/lib/config';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Your buddy is ready', robots: { index: false } };
@@ -31,15 +30,21 @@ export default async function Done({ searchParams }: { searchParams: Promise<Rec
       <SiteHead cta={false} />
       <main className="narrow section center">
         <div style={{ width: 200, margin: '0 auto' }}><Buddy colour={buddy?.colour || 'honey'} mood="grin" action="jump" /></div>
-        <h1 style={{ fontSize: 'clamp(32px, 6vw, 48px)' }}>{name} is ready to hatch!</h1>
+        <h1 style={{ fontSize: 'clamp(32px, 6vw, 48px)' }}>{name} is on the way!</h1>
         {buddy?.status === 'active' ? (
           <>
-            <p className="lede" style={{ margin: '0 auto 20px' }}>We’ve emailed your sign-in link to <b>{buddy.email}</b>. Next: print the QR card from the parent page and let your child scan it.</p>
-            {/* Only shown right after paying, on this browser: saves a trip to the inbox. */}
-            <a className="btn" href={parentLink(buddy, 1)}>Open the parent page</a>
+            <p className="lede" style={{ margin: '0 auto 18px' }}>An egg arrives on the first visit and hatches on the fourth. Write these down (we’ve emailed them to <b>{buddy.email}</b> too):</p>
+            <div className="codes">
+              <div><small>Buddy code</small><b>{buddy.card_key}</b><span>Opens {name} on any phone, tablet or TV at {LOGIN_URL.replace(/^https?:\/\//, '')}</span></div>
+              <div><small>Parent PIN</small><b className="pin">{buddy.parent_pin}</b><span>For the parent page</span></div>
+            </div>
+            <div className="row" style={{ justifyContent: 'center', marginTop: 18 }}>
+              <a className="btn" href={buddyUrl(buddy.slug, `/go?c=${encodeURIComponent(buddy.card_key)}`)}>Open {name} on this device</a>
+              <a className="btn ghost" href={buddyUrl(buddy.slug, '/parent')}>Parent page</a>
+            </div>
           </>
         ) : (
-          <p className="lede" style={{ margin: '0 auto' }}>Thanks! We’re just confirming your payment. Your sign-in link will arrive by email in a minute or two.</p>
+          <p className="lede" style={{ margin: '0 auto' }}>Thanks! We’re just confirming your payment. Your buddy code will arrive by email in a minute or two.</p>
         )}
       </main>
       <SiteFoot />

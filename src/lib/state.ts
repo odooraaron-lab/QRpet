@@ -15,6 +15,7 @@ export async function buildState(b: Buddy): Promise<BuddyState> {
     name: b.slug.charAt(0).toUpperCase() + b.slug.slice(1).replace(/-/g, ' '),
     colour: b.colour,
     childName: b.child_name,
+    ageBand: b.age_band,
     status: b.status,
     visitDay: b.visit_day,
     today: growth.today ? { id: growth.today.item_id, title: ITEM[growth.today.item_id]?.title ?? 'A little sparkle', isNew: growth.isNew } : null,

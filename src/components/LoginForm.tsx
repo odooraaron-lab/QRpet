@@ -14,7 +14,7 @@ export function LoginForm() {
     if (!r?.ok) { setError(j?.error || 'Something went wrong. Please try again.'); setState('idle'); return; }
     setState('sent');
   }
-  if (state === 'sent') return <div className="notice" role="status">Check your inbox. If <b>{email}</b> has a buddy, a sign-in link is on its way (it works for 24 hours).</div>;
+  if (state === 'sent') return <div className="notice" role="status">Check your inbox. If <b>{email}</b> has a buddy, its code and PIN are on the way.</div>;
   return (
     <form onSubmit={submit} className="panel">
       {error && <div className="error" role="alert">{error}</div>}
@@ -22,7 +22,7 @@ export function LoginForm() {
         <label htmlFor="email">Email</label>
         <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
       </div>
-      <button className="btn block" disabled={state === 'busy' || !email}>{state === 'busy' ? 'Sending…' : 'Email me a sign-in link'}</button>
+      <button className="btn block" disabled={state === 'busy' || !email}>{state === 'busy' ? 'Sending…' : 'Email me my code'}</button>
     </form>
   );
 }

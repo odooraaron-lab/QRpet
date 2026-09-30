@@ -17,7 +17,7 @@ create table if not exists qb_buddies (
   plan                   text not null default 'monthly',
   stripe_subscription_id text,
   checkout_session_id    text,
-  card_key               text not null,                -- in the printed QR card; replace to revoke
+  card_key               text not null,                -- the buddy code (MOON-TIGER-APPLE-27), also in the card's QR; replace to revoke
   settings               jsonb not null default '{}',
   visit_day              int not null default 0,       -- growth counts visits, not calendar days
   created_at             timestamptz not null default now(),
@@ -66,5 +66,11 @@ create table if not exists qb_visits (
   seconds int not null default 0,
   primary key (slug, day)
 );
+-- v2: buddy codes (card_key holds the words code) and the parent PIN
+alter table qb_buddies add column if not exists parent_pin text;
+alter table qb_buddies add column if not exists pin_fails int not null default 0;
+alter table qb_buddies add column if not exists pin_locked_until timestamptz;
+update qb_buddies set parent_pin = lpad(floor(random() * 10000)::int::text, 4, '0') where parent_pin is null;
+create index if not exists qb_buddies_code_idx on qb_buddies ((regexp_replace(upper(card_key), '[^A-Z0-9]', '', 'g')));
 create index if not exists qb_commands_slug_idx on qb_commands (slug, id);
 create index if not exists qb_messages_slug_idx on qb_messages (slug, show_on);

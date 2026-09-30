@@ -3,7 +3,7 @@
 // so swapping in the designer's Rive file later only replaces this component.
 
 export type Mood = 'happy' | 'grin' | 'surprised' | 'sing' | 'sleepy' | 'asleep' | 'shy' | 'proud' | 'think' | 'pout';
-export type Action = 'idle' | 'bounce' | 'spin' | 'wave' | 'clap' | 'dance' | 'jump' | 'giggle' | 'hop' | 'hug' | 'hide' | 'sway' | 'float';
+export type Action = 'idle' | 'eat' | 'shake' | 'bounce' | 'spin' | 'wave' | 'clap' | 'dance' | 'jump' | 'giggle' | 'hop' | 'hug' | 'hide' | 'sway' | 'float';
 
 export const PALETTES: Record<string, { name: string; body: string; shade: string; edge: string; patch: string }> = {
   honey: { name: 'Honey', body: '#FFD98E', shade: '#F4B955', edge: '#C98B2E', patch: '#FFEDC4' },

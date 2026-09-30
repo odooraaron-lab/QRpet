@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { db } from './db';
 import { nextItem, ITEM, abilities, type Track } from './growth';
 import { token, shortId } from './guard';
+import { newCode, newPin, normalizeCode } from './codes';
 
 export type Settings = {
   weights: Record<string, number>;   // learning sliders: counting, colours, shapes, songs, feelings (0.25 to 3)
@@ -32,7 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
 export type Buddy = {
   slug: string; parent_id: string; colour: string; child_name: string; age_band: string; tz: string;
   status: 'pending' | 'active' | 'lapsed' | 'disabled'; plan: string; stripe_subscription_id: string | null;
-  checkout_session_id: string | null; card_key: string; settings: Settings; visit_day: number;
+  checkout_session_id: string | null; card_key: string; settings: Settings; visit_day: number; parent_pin: string | null;
   created_at: string; activated_at: string | null; email?: string;
 };
 
@@ -79,8 +80,8 @@ export async function createPending(o: { slug: string; email: string; colour: st
     insert into qb_parents (id, email) values (${shortId(12)}, ${o.email})
     on conflict (email) do update set email = excluded.email returning id`;
   await sql`delete from qb_buddies where slug = ${o.slug} and status = 'pending'`;
-  await sql`insert into qb_buddies (slug, parent_id, colour, child_name, age_band, plan, card_key, settings)
-            values (${o.slug}, ${parent.id}, ${o.colour}, ${o.childName}, ${o.ageBand}, ${o.plan}, ${token(18)}, ${sql.json(DEFAULT_SETTINGS as never)})`;
+  await sql`insert into qb_buddies (slug, parent_id, colour, child_name, age_band, plan, card_key, parent_pin, settings)
+            values (${o.slug}, ${parent.id}, ${o.colour}, ${o.childName}, ${o.ageBand}, ${o.plan}, ${newCode()}, ${newPin()}, ${sql.json(DEFAULT_SETTINGS as never)})`;
   return parent.id;
 }
 
@@ -106,6 +107,40 @@ export async function setSessionId(slug: string, sessionId: string) {
   await sql`update qb_buddies set checkout_session_id = ${sessionId} where slug = ${slug}`;
 }
 
+/** The buddy a typed (or scanned) code belongs to. Pending and deleted buddies don't open. */
+export async function buddyByCode(raw: unknown): Promise<Buddy | null> {
+  const code = normalizeCode(raw);
+  if (code.length < 8) return null;
+  const sql = await db();
+  const rows = await sql<Buddy[]>`select b.*, p.email from qb_buddies b join qb_parents p on p.id = b.parent_id
+    where regexp_replace(upper(b.card_key), '[^A-Z0-9]', '', 'g') = ${code} and b.status <> 'pending'`;
+  return rows[0] ?? null;
+}
+
+/** Checks the parent PIN. Five wrong tries lock it for 10 minutes. */
+export async function checkPin(slug: string, pin: string): Promise<'ok' | 'wrong' | 'locked'> {
+  const sql = await db();
+  const [b] = await sql<{ parent_pin: string | null; locked: boolean }[]>`
+    select parent_pin, coalesce(pin_locked_until > now(), false) as locked from qb_buddies where slug = ${slug}`;
+  if (!b) return 'wrong';
+  if (b.locked) return 'locked';
+  if (b.parent_pin && b.parent_pin === pin) {
+    await sql`update qb_buddies set pin_fails = 0, pin_locked_until = null where slug = ${slug}`;
+    return 'ok';
+  }
+  const [r] = await sql<{ pin_fails: number }[]>`update qb_buddies set pin_fails = pin_fails + 1 where slug = ${slug} returning pin_fails`;
+  if (r.pin_fails >= 5) {
+    await sql`update qb_buddies set pin_fails = 0, pin_locked_until = now() + interval '10 minutes' where slug = ${slug}`;
+    return 'locked';
+  }
+  return 'wrong';
+}
+
+export async function setPin(slug: string, pin: string) {
+  const sql = await db();
+  await sql`update qb_buddies set parent_pin = ${pin}, pin_fails = 0, pin_locked_until = null where slug = ${slug}`;
+}
+
 export async function updateBuddy(slug: string, patch: Partial<Pick<Buddy, 'colour' | 'child_name' | 'age_band' | 'tz'>> & { settings?: Partial<Settings> }) {
   const sql = await db();
   const b = await getBuddy(slug);
@@ -117,7 +152,7 @@ export async function updateBuddy(slug: string, patch: Partial<Pick<Buddy, 'colo
 
 export async function newCardKey(slug: string) {
   const sql = await db();
-  const key = token(18);
+  const key = newCode();
   await sql`update qb_buddies set card_key = ${key} where slug = ${slug}`;
   return key;
 }

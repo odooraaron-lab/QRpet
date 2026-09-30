@@ -26,8 +26,9 @@ payment. Without Resend, emails (with the sign-in link) are printed in the termi
 
 Shortcuts, local only:
 
-- `/api/dev/seed?name=teddy&days=24` makes a buddy that is 24 days old and signs this browser in as both
-  the child's device and the parent. Add `&reset=1` to start again, `&colour=mint`, `&tv=1` for TV mode.
+- `/api/dev/seed?name=teddy&days=24&age=2-3&awake=1` makes a buddy that is 24 days old and signs this browser
+  in as both the child's device and the parent. `days=0` to `3` shows the egg days (3 = hatching day).
+  Add `&reset=1` to start again, `&colour=mint`, `&tv=1` for TV mode, and `&awake=1` to switch bedtime off.
 - `teddy.localhost:3000` works like `teddy.myqr.co.nz` when you set `BUDDY_DOMAIN=localhost`.
 
 ## Deploy (Vercel)
@@ -82,9 +83,13 @@ Shortcuts, local only:
 
 Who can open a buddy:
 
-- A device that scanned the card. It gets a random token, stored hashed.
+- A device that scanned the card or typed the **buddy code** (e.g. `MOON-TIGER-APPLE-27`, stored in
+  `card_key`). It gets a random token, stored hashed.
 - A paired TV.
-- The parent, signed in with an emailed link. The session is signed with `SESSION_SECRET` and lasts 30 days.
+- The parent. The **parent PIN** (4 digits) opens the parent page, including from inside the buddy: press and
+  hold the top-right corner for 3 seconds. There's also a one-day link in the "forgot my code" email. The
+  parent session is signed with `SESSION_SECRET` and lasts 30 days.
 
-Anyone else sees "Ask a grown-up to scan your card". "Lost the card?" on the parent page makes a new card key
-and signs out phones that used the old one.
+Anyone else sees a box to type the buddy code. "New code" on the parent page replaces the code and card and
+signs out phones that used the old one. Age-based games live in `src/lib/learning.ts` and
+`src/components/Games.tsx`. Research notes are in [docs/RESEARCH.md](docs/RESEARCH.md).

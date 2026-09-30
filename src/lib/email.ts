@@ -28,37 +28,46 @@ const shell = (title: string, body: string) => `<!doctype html><html><body style
 <p style="font-size:13px;color:#5E4C70;margin:16px 4px 0">Questions? Just reply to this email.</p></div></body></html>`;
 const button = (href: string, label: string) => `<p style="margin:18px 0"><a href="${href}" style="display:inline-block;background:#C23A64;color:#fff;text-decoration:none;font-weight:800;border-radius:999px;padding:14px 26px">${label}</a></p>`;
 
+const openLink = (b: Buddy) => buddyUrl(b.slug, `/go?c=${encodeURIComponent(b.card_key)}`);
+const codeBlock = (b: Buddy) => `<div style="background:#F4F8FE;border-radius:16px;padding:14px 16px;margin:14px 0">
+<p style="margin:0;font-size:13px;font-weight:800;color:#5E4C70">BUDDY CODE (opens ${escapeHtml(pretty(b.slug))} on any phone, tablet or TV)</p>
+<p style="margin:4px 0 10px;font-size:22px;font-weight:800;letter-spacing:.04em">${escapeHtml(b.card_key)}</p>
+<p style="margin:0;font-size:13px;font-weight:800;color:#5E4C70">PARENT PIN (for the parent page)</p>
+<p style="margin:4px 0 0;font-size:22px;font-weight:800;letter-spacing:.2em">${escapeHtml(b.parent_pin ?? '')}</p></div>`;
+
 export function welcomeEmail(b: Buddy) {
   const name = pretty(b.slug);
-  const parent = parentLink(b);
+  const address = buddyUrl(b.slug).replace(/^https?:\/\//, '');
   const text = `Kia ora,
 
-${name} is ready and waiting to hatch!
+${name} is on the way! An egg arrives on the first visit and hatches on the fourth.
 
-1. PARENT PAGE (print the QR card, set learning goals, add messages)
-${parent}
-This link signs you in for 7 days. Any time after that, get a new one at ${LOGIN_URL}.
+BUDDY CODE: ${b.card_key}
+Type it at ${LOGIN_URL.replace(/^https?:\/\//, '')} (or on ${address}) to open ${name} on any phone, tablet or TV. The device remembers it after that.
 
-2. PRINT THE CARD
-On the parent page, tap "Print the QR card". Your child scans it with a phone or tablet to open ${name}.
+PARENT PIN: ${b.parent_pin}
+For the parent page: ${buddyUrl(b.slug, '/parent')}
+From inside the buddy: press and hold the top-right corner for 3 seconds, then type the PIN.
 
-3. ON THE TV (optional)
-On the TV's web browser go to ${buddyUrl(b.slug, '/tv').replace(/^https?:\/\//, '')} and type the 6-digit code it shows into the parent page.
+Open ${name} on this device now:
+${openLink(b)}
 
-${name} learns one new thing every day your child visits. No ads, no chat, nothing to buy inside.
+Keep this email: the code and PIN are all you need. Print the QR card from the parent page.
 
 ${PRODUCT} by ${BRAND}`;
-  const html = shell(`${escapeHtml(name)} is ready to hatch!`, `
-<p style="font-size:16px;line-height:1.55">Your buddy lives at <b>${escapeHtml(buddyUrl(b.slug).replace(/^https?:\/\//, ''))}</b>. Start on the parent page: print the QR card, then let your child scan it.</p>
-${button(parent, 'Open the parent page')}
-<ol style="padding-left:20px;font-size:15px;line-height:1.6"><li>Print the QR card from the parent page.</li><li>Your child scans it with a phone or tablet: ${escapeHtml(name)} hatches!</li><li>On a TV, open <b>${escapeHtml(buddyUrl(b.slug, '/tv').replace(/^https?:\/\//, ''))}</b> and type the code into the parent page.</li></ol>
-<p style="font-size:14px;color:#5E4C70">This sign-in link works for 7 days. After that, get a new one from ${escapeHtml(LOGIN_URL.replace(/^https?:\/\//, ''))}.</p>`);
-  return sendEmail({ to: b.email!, subject: `${name} is ready to hatch!`, html, text });
+  const html = shell(`${escapeHtml(name)} is on the way!`, `
+<p style="font-size:16px;line-height:1.55">An egg arrives on the first visit and hatches on the fourth. Keep this email: the code and PIN are all you need.</p>
+${codeBlock(b)}
+${button(openLink(b), `Open ${escapeHtml(name)}`)}
+<ol style="padding-left:20px;font-size:15px;line-height:1.6"><li>On another device, go to <b>${escapeHtml(LOGIN_URL.replace(/^https?:\/\//, ''))}</b> and type the buddy code.</li><li>Parent page: <b>${escapeHtml(address)}/parent</b> and the PIN. From inside the buddy, press and hold the top-right corner for 3 seconds.</li><li>Print the QR card from the parent page: scanning it opens ${escapeHtml(name)} too.</li></ol>`);
+  return sendEmail({ to: b.email!, subject: `${name} is on the way: your buddy code`, html, text });
 }
 
+/** "Forgot your code?": every buddy on this email, with its code, PIN and a one-day parent link. */
 export function loginEmail(email: string, buddies: Buddy[]) {
-  const links = buddies.map((b) => ({ name: pretty(b.slug), href: parentLink(b, 1) }));
-  const text = `Here ${links.length === 1 ? 'is your sign-in link' : 'are your sign-in links'} (valid for 24 hours):\n\n${links.map((l) => `${l.name}: ${l.href}`).join('\n')}\n\nDidn't ask for this? You can ignore it.`;
-  const html = shell('Your sign-in link', `${links.map((l) => `<p style="margin:6px 0 0;font-weight:800">${escapeHtml(l.name)}</p>${button(l.href, `Open ${escapeHtml(l.name)}’s parent page`)}`).join('')}<p style="font-size:14px;color:#5E4C70">Valid for 24 hours. Didn’t ask for this? You can ignore it.</p>`);
-  return sendEmail({ to: email, subject: `Sign in to ${PRODUCT}`, html, text });
+  const text = buddies.map((b) => `${pretty(b.slug)}\n  Buddy code: ${b.card_key}\n  Parent PIN: ${b.parent_pin}\n  Open: ${openLink(b)}\n  Parent page (link works 24 hours): ${parentLink(b, 1)}`).join('\n\n')
+    + `\n\nDidn't ask for this? You can ignore it.`;
+  const html = shell(buddies.length === 1 ? 'Your buddy code' : 'Your buddy codes', buddies.map((b) => `<p style="margin:10px 0 0;font-weight:800;font-size:18px">${escapeHtml(pretty(b.slug))}</p>${codeBlock(b)}${button(openLink(b), `Open ${escapeHtml(pretty(b.slug))}`)}<p style="font-size:14px"><a href="${parentLink(b, 1)}">Open the parent page</a> (link works for 24 hours)</p>`).join('')
+    + `<p style="font-size:14px;color:#5E4C70">Didn’t ask for this? You can ignore it.</p>`);
+  return sendEmail({ to: email, subject: `Your ${PRODUCT} code`, html, text });
 }

@@ -1,131 +1,222 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Buddy, type Action, type Mood } from './Buddy';
-import { COLOURS, ITEM, type Abilities } from '@/lib/growth';
-import { sounds, playSong, say, unlockAudio } from '@/lib/sound';
+import { Egg } from './Egg';
+import { Games, type GameApi } from './Games';
+import { ParentGate } from './ParentGate';
+import { ITEM, type Abilities } from '@/lib/growth';
+import { COLOUR_HEX, GAMES, SNACKS, gamesFor, type Band, type GameId } from '@/lib/learning';
+import { sounds, playSong, say, talk, unlockAudio } from '@/lib/sound';
 
 export type BuddyState = {
-  slug: string; name: string; colour: string; childName: string; status: string;
+  slug: string; name: string; colour: string; childName: string; status: string; ageBand: string;
   visitDay: number; today: { id: string; title: string; isNew: boolean } | null;
   learned: string[]; abilities: Abilities; messages: string[];
   settings: { sessionMinutes: number; volume: 'low' | 'medium' | 'high'; readAloud: boolean; games: Record<string, boolean>; accessory: string | null };
   bedtimeNow: boolean; capReached: boolean; commandSince: number; tvPaired: boolean;
 };
 
-type Phase = 'asleep' | 'hatch' | 'intro' | 'play' | 'game' | 'bye';
-type Game = null | { kind: 'count'; n: number; got: number[]; k: number } | { kind: 'pick'; what: 'colours' | 'shapes'; round: number; target: string; options: string[]; wrong: string | null } | { kind: 'peekaboo'; round: number; hidden: boolean };
+// sleep: first screen, tap to wake · egg: not hatched yet · intro: saying hello · play · feed: snack tray open
+// picker: choosing a game · game · nap: bedtime or play time used up (wakes for a moment, then sleeps again)
+// doze: fell asleep from no one playing (a tap wakes it properly)
+type Phase = 'sleep' | 'egg' | 'intro' | 'play' | 'feed' | 'picker' | 'game' | 'nap' | 'doze';
+type Fx = { id: number; kind: 'sparkles' | 'confetti' | 'note' | 'hearts' | 'bubble' | 'fly' | 'mail' | 'zzz'; x: number; y: number; e?: string; dx?: number; dy?: number; c?: string };
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
-const shuffle = <T,>(xs: T[]) => [...xs].sort(() => Math.random() - 0.5);
-const SHAPES: Record<string, string> = { circle: '●', square: '■', triangle: '▲', star: '★', heart: '♥' };
-const SHAPE_COLOURS = ['#4C8DF6', '#EF5B5B', '#3FB984', '#FFB020', '#FF7EB6'];
 const SONG_OF: Record<string, string> = { 'song-hello': 'hello', 'song-star': 'star', 'song-rain': 'rain', 'song-goodnight': 'goodnight' };
 const MOVE_ACTION: Record<string, Action> = { wave: 'wave', bounce: 'bounce', clap: 'clap', spin: 'spin', dance: 'dance', jump: 'jump', hug: 'hug' };
+const HATCH_TAPS = 8;
+const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
+
+/** One or two words for today's new thing. */
+function newWord(id: string) {
+  const [kind, value] = id.split(/-(.*)/);
+  if (kind === 'colour' || kind === 'shape') return `${cap(value)}!`;
+  if (kind === 'count' && Number(value)) return Array.from({ length: Math.min(Number(value), 5) }, (_, i) => i + 1).join(' ') + (Number(value) > 5 ? '…' : '');
+  if (kind === 'feel') return `${cap(value)}!`;
+  return 'Ta-da!';
+}
 
 export function Player({ initial, base, tv = false }: { initial: BuddyState; base: string; tv?: boolean }) {
   const [s, setS] = useState(initial);
-  const [phase, setPhase] = useState<Phase>('asleep');
+  const a = s.abilities;
+  const band = (['2-3', '4-5', '6+'].includes(s.ageBand) ? s.ageBand : '4-5') as Band;
+  // Hatching day: the hatch plays once per device (remembered in the browser, so checked after the first render).
+  const [hatchSeen, setHatchSeen] = useState(!(s.today?.id === 'hatch' && s.today.isNew));
+  const firstHatch = s.today?.id === 'hatch' && !hatchSeen;
+  const startsAsEgg = !a.hatched || firstHatch;
+
+  const [phase, setPhase] = useState<Phase>(s.bedtimeNow || s.capReached ? 'nap' : 'sleep');
   const [mood, setMood] = useState<Mood>('asleep');
   const [action, setAction] = useState<Action>('idle');
   const [glow, setGlow] = useState(false);
-  const [card, setCard] = useState<{ title: string; text?: string } | null>(null);
-  const [game, setGame] = useState<Game>(null);
-  const [fx, setFx] = useState<{ id: number; kind: 'sparkles' | 'confetti' | 'note'; x?: number }[]>([]);
-  const [muted, setMuted] = useState(false);
-  const [eggTaps, setEggTaps] = useState(0);
+  const [fx, setFx] = useState<Fx[]>([]);
+  const [words, setWords] = useState<{ id: number; text: string; ms: number }[]>([]);
+  const [game, setGame] = useState<GameId | null>(null);
+  const [egg, setEgg] = useState({ taps: 0, wobble: 0, glow: false, crack: Math.max(0, (firstHatch ? 3 : a.eggDay) - 1) });
+  const [eggMode, setEggMode] = useState(startsAsEgg);
+  const [full, setFull] = useState(0);
+
+  const phaseRef = useRef(phase); phaseRef.current = phase;
+  useEffect(() => {
+    if (s.today?.id !== 'hatch') return;
+    const seen = seenHatch(s.slug);
+    setHatchSeen(seen);
+    if (!seen) { setEggMode(true); setEgg((e) => ({ ...e, crack: 2 })); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const busy = useRef(false);
   const lastInput = useRef(Date.now());
   const played = useRef(0);
   const since = useRef(initial.commandSince);
-  const phaseRef = useRef(phase);
-  phaseRef.current = phase;
+  const actSeq = useRef(0);
+  const lastReaction = useRef(-1);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const repeat = useRef<(() => void) | null>(null);
+  const wakeLock = useRef<{ release: () => Promise<void> } | null>(null);
 
-  const a = s.abilities;
   const knows = (id: string) => s.learned.includes(id);
   const accessory = s.settings.accessory && a.dress.includes(s.settings.accessory) ? s.settings.accessory : a.dress.at(-1) ?? null;
-  const games = s.settings.games;
+  const games = gamesFor(band, s.visitDay, s.settings.games);
 
-  // ── effects ──
-  const burst = useCallback((kind: 'sparkles' | 'confetti' | 'note', x?: number) => {
+  // ── little helpers ──
+  const play = useCallback((fn: () => void) => { try { fn(); } catch { /* no audio */ } }, []);
+  const addFx = useCallback((f: Omit<Fx, 'id'>, ms = 2600) => {
     const id = Math.random();
-    setFx((f) => [...f, { id, kind, x }]);
-    setTimeout(() => setFx((f) => f.filter((e) => e.id !== id)), kind === 'confetti' ? 4200 : 2600);
+    setFx((l) => [...l, { ...f, id }]);
+    setTimeout(() => setFx((l) => l.filter((e) => e.id !== id)), ms);
   }, []);
+  const burst = useCallback((kind: 'sparkles' | 'confetti' | 'hearts') => addFx({ kind, x: 50, y: 42 }, kind === 'confetti' ? 4200 : 2200), [addFx]);
+  /** One or two words, big, no background, for a moment. */
+  const word = useCallback((text: string, ms = 1500) => {
+    const id = Math.random();
+    setWords([{ id, text, ms }]);
+    setTimeout(() => setWords((w) => w.filter((x) => x.id !== id)), ms);
+  }, []);
+  /** Plays a move, then back to idle (unless another move started meanwhile). */
   const act = useCallback(async (next: Action, ms = 1600, m?: Mood) => {
+    const my = ++actSeq.current;
     if (m) setMood(m);
     setAction(next);
     await wait(ms);
-    setAction('idle');
+    if (actSeq.current === my) setAction('idle');
   }, []);
-  const play = (fn: () => void) => { if (!muted) fn(); };
+
+  const mouth = () => {
+    const r = stageRef.current?.getBoundingClientRect();
+    return r ? { x: r.left + r.width / 2, y: r.top + r.height * 0.58 } : { x: window.innerWidth / 2, y: window.innerHeight * 0.6 };
+  };
+  /** A snack flies from `from` into QR's mouth; QR munches. */
+  const feedOne = useCallback(async (e: string, from?: { x: number; y: number }) => {
+    const start = from ?? { x: window.innerWidth / 2, y: window.innerHeight * 0.92 };
+    const m = mouth();
+    addFx({ kind: 'fly', e, x: start.x, y: start.y, dx: m.x - start.x, dy: m.y - start.y }, 700);
+    setMood('surprised');
+    await wait(560);
+    play(sounds.chomp);
+    await act('eat', 900, 'sing');
+    if (e === '🥦' && Math.random() < 0.6) { setMood('think'); word('Hmm…', 900); await wait(800); }
+    play(sounds.yum);
+    if (e === '🍪') { burst('sparkles'); word('Cookie!', 1100); }
+    else if (e === '🥛') word('Ahh!', 1000);
+    else word(pick(['Yum!', 'Mmm!', 'Crunch!', 'Yummy!']), 1000);
+    talk(pick(['Yum!', 'Mmm!', 'Yummy!']));
+    setMood('grin');
+    await wait(400);
+    setMood('happy');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [act, addFx, burst, play, word]);
 
   const sing = useCallback(async (songId?: string) => {
     const learnedSongs = s.learned.map((id) => SONG_OF[id]).filter(Boolean);
     const id = songId ?? (learnedSongs.length ? pick(learnedSongs) : 'name');
     setMood('sing'); setAction('sway');
-    const ms = muted ? 3000 : playSong(id, (i) => { if (i % 2 === 0) burst('note', 20 + Math.random() * 60); });
+    const ms = playSong(id, (i) => { if (i % 2 === 0) addFx({ kind: 'note', x: 25 + Math.random() * 50, y: 45 }, 2400); });
     await wait(ms);
     setMood('happy'); setAction('idle');
-  }, [s.learned, muted, burst]);
+  }, [s.learned, addFx]);
 
-  const randomMove = useCallback(async () => {
-    const moves = a.moves.map((m) => MOVE_ACTION[m]).filter(Boolean);
-    const m = moves.length ? pick(moves) : 'hop';
-    play(sounds.boop);
-    await act(m, m === 'jump' ? 2000 : 1800, 'grin');
-    setMood('happy');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [a.moves, act, muted]);
-
-  // ── the reveal of today's new thing ──
-  const reveal = useCallback(async (id: string) => {
-    const item = ITEM[id];
-    setGlow(true); setMood('think');
-    play(sounds.sparkle); burst('sparkles');
-    await wait(1400);
-    play(sounds.ding); setMood('surprised');
-    await wait(500);
-    setCard({ title: 'New today!', text: item?.title ?? 'A little sparkle' });
-    setGlow(false); setMood('grin');
-    const [kind, value] = id.split(/-(.*)/);
-    if (kind === 'move' && MOVE_ACTION[value]) await act(MOVE_ACTION[value], 2000, 'grin');
-    else if (kind === 'sound') { const f = (sounds as unknown as Record<string, () => void>)[value]; if (f) play(f); await act('hop', 900); }
-    else if (kind === 'count' && Number(value)) { for (let k = 1; k <= Number(value); k++) { play(() => sounds.count(k)); await wait(420); } }
-    else if (kind === 'song') await sing(SONG_OF[id]);
-    else { play(sounds.trill); await act('bounce', 1800, 'grin'); }
-    await wait(1800);
-    setCard(null); setMood('happy');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [act, burst, sing, muted]);
-
-  const showMessages = useCallback(async () => {
-    for (const m of s.messages) {
-      setCard({ title: '💌', text: m });
-      play(sounds.trill); burst('confetti');
-      if (s.settings.readAloud && !muted) say(m);
-      await act('bounce', 1800, 'grin');
-      await wait(2600);
-      setCard(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s.messages, s.settings.readAloud, act, burst, muted]);
-
-  const bye = useCallback(async (why: 'time' | 'bedtime') => {
-    setGame(null); setPhase('bye');
-    if (why === 'bedtime') { setMood('sleepy'); if (!muted) playSong('lullaby'); await wait(3000); }
-    else { play(sounds.yawn); await act('wave', 2200, 'happy'); setMood('sleepy'); await wait(1200); }
-    setMood('asleep'); setAction('idle');
-    setCard({ title: 'Night night!', text: why === 'bedtime' ? `${s.name} is sleeping. See you in the morning.` : `${s.name} needs a nap. Come back tomorrow!` });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [act, muted, s.name]);
+  // ── keep the screen on while playing (phones and tablets) ──
+  useEffect(() => {
+    const awake = ['egg', 'intro', 'play', 'feed', 'picker', 'game'].includes(phase);
+    const nav = navigator as Navigator & { wakeLock?: { request: (t: 'screen') => Promise<{ release: () => Promise<void> }> } };
+    if (awake && !wakeLock.current && nav.wakeLock) nav.wakeLock.request('screen').then((l) => { wakeLock.current = l; }).catch(() => {});
+    if (!awake && wakeLock.current) { wakeLock.current.release().catch(() => {}); wakeLock.current = null; }
+  }, [phase]);
 
   // ── waking up ──
-  async function wake() {
+  async function wakeFromSleep() {
     unlockAudio(s.settings.volume);
     lastInput.current = Date.now();
-    if (s.today?.id === 'hatch' && s.today.isNew) { setPhase('hatch'); return; }
+    if (eggMode) return startEgg();
     await intro();
+  }
+
+  async function startEgg() {
+    setPhase('egg');
+    play(sounds.knock);
+    setEgg((e) => ({ ...e, wobble: e.wobble + 1 }));
+    if (firstHatch) { word('Crack?', 1400); say('Tap tap tap! Something is happening!'); return; }
+    if (s.today?.isNew && a.eggDay > 1) {
+      await wait(900);
+      play(sounds.sparkle);
+      setEgg((e) => ({ ...e, crack: a.eggDay - 1, glow: true, wobble: e.wobble + 1 }));
+      word('Crack!', 1300);
+      await wait(1400);
+      setEgg((e) => ({ ...e, glow: false }));
+    }
+    if (s.messages.length) await showMessages();
+  }
+
+  async function tapEgg() {
+    lastInput.current = Date.now();
+    if (phaseRef.current !== 'egg') return;
+    if (firstHatch) {
+      const taps = egg.taps + 1;
+      setEgg((e) => ({ ...e, taps, wobble: e.wobble + 1, crack: Math.min(6, 2 + Math.ceil((taps / HATCH_TAPS) * 4)) }));
+      play(() => sounds.count(taps));
+      if (taps < HATCH_TAPS) return;
+      return hatch();
+    }
+    // Not hatching yet: a wobble and a surprise each tap.
+    setEgg((e) => ({ ...e, wobble: e.wobble + 1 }));
+    const r = Math.floor(Math.random() * 5);
+    if (r === 0) { play(sounds.knock); }
+    else if (r === 1) { play(sounds.giggle); }
+    else if (r === 2) { play(sounds.kiss); burst('hearts'); }
+    else if (r === 3) { play(sounds.sparkle); setEgg((e) => ({ ...e, glow: true })); setTimeout(() => setEgg((e) => ({ ...e, glow: false })), 1200); }
+    else { play(() => sounds.bubble()); addFx({ kind: 'note', x: 40 + Math.random() * 20, y: 50 }, 2400); }
+    if (Math.random() < 0.2) word('Soon!', 1100);
+  }
+
+  /** Tapping the egg at bedtime: a sleepy wobble, nothing more. */
+  function nudgeEgg() {
+    unlockAudio(s.settings.volume);
+    setEgg((e) => ({ ...e, wobble: e.wobble + 1 }));
+    play(sounds.yawn);
+    word('Shh…', 1200);
+  }
+
+  async function hatch() {
+    busy.current = true;
+    play(sounds.hatch);
+    await wait(700);
+    burst('sparkles'); burst('confetti');
+    markHatched(s.slug);
+    setEggMode(false);
+    setPhase('intro'); setMood('surprised');
+    await wait(300);
+    await act('bounce', 1800, 'grin');
+    word(`Hi${s.childName ? ` ${s.childName}` : ''}!`, 1800);
+    talk(s.childName ? `Hi ${s.childName}!` : 'Hi!');
+    await wait(1600);
+    word(`I’m ${s.name}!`, 1600);
+    say(`I’m ${s.name}!`);
+    await wait(1800);
+    if (s.messages.length) await showMessages();
+    busy.current = false;
+    setMood('happy'); setPhase('play');
   }
 
   async function intro() {
@@ -134,130 +225,182 @@ export function Player({ initial, base, tv = false }: { initial: BuddyState; bas
     await wait(500);
     play(sounds.boop); setMood('surprised');
     await wait(400);
-    if (s.bedtimeNow) { busy.current = false; return bye('bedtime'); }
-    await act(knows('move-wave') ? 'wave' : 'bounce', 1800, 'grin');
-    if (s.childName && s.settings.readAloud && !muted) say(`Hello ${s.childName}!`);
-    if (!muted) playSong('name');
+    if (s.bedtimeNow) { busy.current = false; return goNap('bedtime'); }
+    await act(knows('move-wave') ? 'wave' : 'bounce', 1600, 'grin');
+    word(s.childName ? `Hi ${s.childName}!` : 'Hi!', 1600);
+    talk(s.childName ? `Hi ${s.childName}!` : 'Hi!');
     setMood('happy');
-    await wait(900);
-    if (s.today?.isNew && s.today.id !== 'hatch') await reveal(s.today.id);
+    await wait(1000);
+    if (s.today?.isNew && s.today.id !== 'hatch' && ITEM[s.today.id]) await reveal(s.today.id);
     if (s.messages.length) await showMessages();
     busy.current = false;
-    if (s.capReached) return bye('time');
+    if (s.capReached) return goNap('time');
     setPhase('play');
   }
 
-  async function tapEgg() {
-    unlockAudio(s.settings.volume);
-    const n = eggTaps + 1;
-    setEggTaps(n);
-    play(() => sounds.count(n));
-    if (n < 3) return;
-    play(sounds.hatch);
-    await wait(700);
-    burst('sparkles'); burst('confetti');
-    setPhase('intro'); setMood('surprised');
-    await act('bounce', 1800, 'grin');
-    setCard({ title: `Hello! I’m ${s.name}!`, text: s.childName ? `Nice to meet you, ${s.childName}!` : 'Nice to meet you!' });
-    if (s.childName && s.settings.readAloud && !muted) say(`Hello ${s.childName}!`);
-    await wait(3200);
-    setCard(null);
-    if (s.messages.length) await showMessages();
-    setPhase('play'); setMood('happy');
+  /** Today's new thing: a sparkle, a ding, then QR shows it off. */
+  async function reveal(id: string) {
+    setGlow(true); setMood('think');
+    play(sounds.sparkle); burst('sparkles');
+    await wait(1300);
+    play(sounds.ding); setMood('surprised'); setGlow(false);
+    word(newWord(id), 1800);
+    const [kind, value] = id.split(/-(.*)/);
+    if (kind === 'move' && MOVE_ACTION[value]) await act(MOVE_ACTION[value], 2000, 'grin');
+    else if (kind === 'sound') { const f = (sounds as unknown as Record<string, () => void>)[value]; if (f) play(f); await act('hop', 900, 'grin'); }
+    else if (kind === 'count' && Number(value)) { for (let k = 1; k <= Number(value); k++) { play(() => sounds.count(k)); say(String(k)); await wait(520); } }
+    else if (kind === 'colour') { say(value); addFx({ kind: 'bubble', x: 50, y: 30, c: COLOUR_HEX[value] }, 1800); await act('bounce', 1400, 'grin'); }
+    else if (kind === 'shape') { say(value); await act('bounce', 1400, 'grin'); }
+    else if (kind === 'song') await sing(SONG_OF[id]);
+    else { play(sounds.trill); await act('bounce', 1600, 'grin'); }
+    setMood('happy');
   }
 
-  // ── taps on QR ──
-  async function tapTummy() {
-    lastInput.current = Date.now();
-    if (phase === 'game' && game?.kind === 'peekaboo') return peekTap();
-    if (phase !== 'play' || busy.current) return;
-    busy.current = true;
-    play(knows('sound-giggle') ? sounds.giggle : sounds.boop);
-    await act('giggle', 1300, 'grin');
-    setMood('happy'); busy.current = false;
+  /** Parent messages: an envelope pops, QR reads it out loud. No text on screen. */
+  async function showMessages() {
+    for (const m of s.messages) {
+      addFx({ kind: 'mail', x: 50, y: 28 }, 3000);
+      play(sounds.trill); burst('hearts');
+      await wait(700);
+      say(m);
+      await act('bounce', 1600, 'grin');
+      await wait(Math.min(6000, 1200 + m.length * 60));
+    }
   }
-  async function tapHead() {
+
+  // ── sleeping ──
+  const goNap = useCallback(async (why: 'time' | 'bedtime') => {
+    setGame(null); setPhase('nap');
+    if (why === 'bedtime') { setMood('sleepy'); playSong('lullaby'); await wait(3200); }
+    else { play(sounds.yawn); await act('wave', 2000, 'happy'); setMood('sleepy'); await wait(1200); }
+    setMood('asleep'); setAction('idle');
+  }, [act, play]);
+
+  /** Tapping QR while it's asleep for the night: a sleepy hello, then straight back to sleep. */
+  const drowsy = useRef(false);
+  async function nudgeNap() {
+    if (drowsy.current) { burst('hearts'); return; }
+    drowsy.current = true;
+    unlockAudio(s.settings.volume);
+    setMood('sleepy'); play(sounds.yawn);
+    await wait(900);
+    await act('wave', 1400, 'sleepy');
+    word('Shh…', 1400);
+    talk(pick(['Night night', 'Sleepy…', 'Shh…']));
+    await wait(2200);
+    setMood('asleep');
+    drowsy.current = false;
+  }
+
+  // ── touching QR: a different surprise every time ──
+  const REACTIONS: (() => Promise<void>)[] = [
+    async () => { play(sounds.giggle); word('Hee hee!', 1100); talk('Hee hee!'); await act('giggle', 1200, 'grin'); },
+    async () => { play(sounds.boing); await act('jump', 1100, 'surprised'); },
+    async () => { play(sounds.whoosh); burst('sparkles'); await act('spin', 1100, 'grin'); },
+    async () => { const t = s.childName ? `Hi ${s.childName}!` : 'Hello!'; word(t, 1300); talk(t); await act('wave', 1600, 'grin'); },
+    async () => { setMood('surprised'); await wait(500); play(sounds.achoo); word('Achoo!', 1100); await act('hop', 600, 'grin'); },
+    async () => { play(sounds.kiss); burst('hearts'); await act('hug', 1300, 'shy'); },
+    async () => { play(sounds.trill); await act(knows('move-dance') ? 'dance' : 'bounce', 1800, 'grin'); },
+    async () => { const n = Math.min(3, Math.max(2, a.countTo)); for (let k = 1; k <= n; k++) { play(() => sounds.count(k)); say(String(k)); setAction('hop'); await wait(520); } word('Whee!', 1000); setAction('idle'); },
+    async () => { const cs = a.colours.length ? a.colours : ['red', 'blue', 'yellow']; const c = pick(cs.filter((x) => COLOUR_HEX[x])) ?? 'blue'; addFx({ kind: 'bubble', x: 50, y: 30, c: COLOUR_HEX[c] }, 1800); word(`${cap(c)}!`, 1200); say(c); await act('bounce', 900, 'grin'); },
+    async () => { setGlow(true); play(sounds.sparkle); await act('float', 1500, 'proud'); setGlow(false); },
+    async () => { play(sounds.pop); word('Boop!', 900); talk('Boop!'); await act('hop', 700, 'surprised'); },
+    async () => { playSong('name', (i) => addFx({ kind: 'note', x: 35 + i * 8, y: 45 }, 2200)); await act('sway', 1300, 'sing'); },
+  ];
+  async function touchBuddy() {
     lastInput.current = Date.now();
-    if (phase === 'game' && game?.kind === 'peekaboo') return peekTap();
-    if (phase !== 'play' || busy.current) return;
+    const p = phaseRef.current;
+    if (p === 'nap') return nudgeNap();
+    if (p === 'sleep') return wakeFromSleep();
+    if (p === 'doze') { play(sounds.boop); setPhase('play'); word('Hi!', 900); talk('Hi!'); await act('bounce', 900, 'grin'); return; }
+    if (p === 'game') { repeat.current?.(); return; }
+    if (p === 'feed') { play(sounds.giggle); return; }
+    if (p !== 'play' || busy.current) return;
     busy.current = true;
-    play(knows('sound-pop') ? sounds.pop : sounds.boop);
-    await act('hop', 700, 'surprised');
-    setMood('happy'); busy.current = false;
+    let i = Math.floor(Math.random() * REACTIONS.length);
+    if (i === lastReaction.current) i = (i + 1) % REACTIONS.length;
+    lastReaction.current = i;
+    try { await REACTIONS[i](); } finally { setMood('happy'); busy.current = false; }
+  }
+
+  /** Tapping the room itself: a bubble pops with a note (cause and effect for the littlest ones). */
+  function tapRoom(e: React.PointerEvent) {
+    lastInput.current = Date.now();
+    const p = phaseRef.current;
+    if (p === 'sleep') { wakeFromSleep(); return; }
+    if (p === 'nap') { nudgeNap(); return; }
+    if (p === 'doze') { touchBuddy(); return; }
+    if (e.target !== e.currentTarget && !(e.target as HTMLElement).classList?.contains('floor')) return;
+    if (!['play', 'egg'].includes(p)) return;
+    play(() => sounds.bubble());
+    const hues = Object.values(COLOUR_HEX);
+    addFx({ kind: 'bubble', x: (e.clientX / window.innerWidth) * 100, y: (e.clientY / window.innerHeight) * 100, c: pick(hues) }, 900);
+  }
+
+  // ── feeding ──
+  async function openFeed() {
+    lastInput.current = Date.now();
+    if (busy.current) return;
+    if (full >= 6) { play(sounds.burp); word('Full!', 1100); talk('I’m full!'); await act('shake', 900, 'grin'); return; }
+    setPhase('feed');
+    word('Hungry!', 1100); talk('Hungry!');
+  }
+  async function feedTap(e: string, ev: React.MouseEvent) {
+    lastInput.current = Date.now();
+    if (busy.current) return;
+    busy.current = true;
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    await feedOne(e, { x: r.left + r.width / 2, y: r.top + r.height / 2 });
+    const f = full + 1;
+    setFull(f);
+    busy.current = false;
+    if (f >= 6) {
+      await wait(300);
+      play(sounds.burp); word('Full!', 1300); talk('I’m full!');
+      await act('shake', 1000, 'grin');
+      setPhase('play');
+      setTimeout(() => setFull(0), 90_000);
+    }
   }
 
   // ── games ──
-  function startGame(kind: 'count' | 'colours' | 'shapes' | 'peekaboo') {
+  function startGame(id: GameId) {
     lastInput.current = Date.now();
-    if (busy.current) return;
-    setPhase('game'); setMood('happy'); setAction('idle');
-    if (kind === 'count') setGame({ kind: 'count', n: Math.min(10, Math.max(2, a.countTo)), got: [], k: 0 });
-    else if (kind === 'peekaboo') { setGame({ kind: 'peekaboo', round: 1, hidden: true }); setAction('hide'); play(sounds.hmm); }
-    else newRound(kind, 1);
+    busy.current = false;
+    setGame(id); setPhase('game'); setMood('happy'); setAction('idle');
   }
-  function newRound(what: 'colours' | 'shapes', round: number) {
-    const known = what === 'colours' ? a.colours : a.shapes;
-    const pool = what === 'colours' ? Object.keys(COLOURS) : Object.keys(SHAPES);
-    const target = pick(known.length ? known : pool.slice(0, 1));
-    const others = shuffle(pool.filter((x) => x !== target)).slice(0, 2);
-    setGame({ kind: 'pick', what, round, target, options: shuffle([target, ...others]), wrong: null });
-    if (s.settings.readAloud && !muted) say(what === 'colours' ? `Find ${target}!` : `Find the ${target}!`);
-  }
-  async function endGame(win = true) {
-    if (win) { play(sounds.cheer); burst('confetti'); await act('dance', 2400, 'grin'); }
-    setGame(null); setPhase('play'); setMood('happy');
-  }
-  async function countTap(i: number) {
-    if (!game || game.kind !== 'count' || game.got.includes(i)) return;
-    lastInput.current = Date.now();
-    const k = game.k + 1;
-    setGame({ ...game, got: [...game.got, i], k });
-    play(() => sounds.count(k));
-    if (s.settings.readAloud && !muted) say(String(k));
-    setAction('hop'); setTimeout(() => setAction('idle'), 550);
-    if (k === game.n) {
-      await wait(700);
-      if (a.countBack) { for (const x of [3, 2, 1]) { setGame((g) => (g && g.kind === 'count' ? { ...g, k: x } : g)); play(() => sounds.count(x)); if (s.settings.readAloud && !muted) say(String(x)); await wait(700); } play(sounds.whoosh); await act('jump', 1100, 'grin'); }
-      await endGame();
-    }
-  }
-  async function pickTap(option: string) {
-    if (!game || game.kind !== 'pick') return;
-    lastInput.current = Date.now();
-    if (option !== game.target) { play(sounds.oops); setGame({ ...game, wrong: option }); setMood('pout'); await wait(700); setMood('happy'); return; }
-    play(sounds.trill); await act('bounce', 1000, 'grin');
-    if (game.round >= 3) return endGame();
-    newRound(game.what, game.round + 1);
-  }
-  async function peekTap() {
-    if (!game || game.kind !== 'peekaboo' || !game.hidden) return;
-    setAction('idle'); setMood('grin'); play(sounds.giggle);
-    if (s.settings.readAloud && !muted) say('Boo!');
-    setGame({ ...game, hidden: false });
-    await wait(1400);
-    if (game.round >= 3) return endGame();
-    setMood('happy'); await wait(600 + Math.random() * 1500);
-    setGame({ kind: 'peekaboo', round: game.round + 1, hidden: true }); setAction('hide'); play(sounds.hmm);
-  }
+  const gameApi: GameApi = {
+    say, talk, word, play, buddy: act, repeat,
+    feed: (e) => feedOne(e),
+    burst,
+    done: async (win) => {
+      setGame(null); setPhase('play');
+      if (win) { play(sounds.cheer); burst('confetti'); word(pick(['Well done!', 'Hooray!', 'You did it!']), 1500); talk('Hooray!'); await act('dance', 2200, 'grin'); }
+      setMood('happy');
+    },
+  };
 
   // ── commands from the parent page and the TV remote ──
   const runCommand = useCallback(async (c: string) => {
-    if (phaseRef.current === 'asleep' || phaseRef.current === 'hatch') return;
+    const p = phaseRef.current;
+    if (c === 'bedtime') return goNap('bedtime');
+    if (['sleep', 'nap', 'egg', 'intro'].includes(p)) return;
     lastInput.current = Date.now();
-    if (c === 'bedtime') return bye('bedtime');
-    if (phaseRef.current === 'bye') return;
-    if (c === 'hello') { play(sounds.boop); return act('wave', 1800, 'grin'); }
+    if (p === 'doze') setPhase('play');
+    if (c === 'hello') { play(sounds.boop); word('Hello!', 1200); talk('Hello!'); return act('wave', 1800, 'grin'); }
     if (c === 'sing') return sing();
     if (c === 'dance') { play(sounds.trill); return act('dance', 3000, 'grin'); }
-    if (c === 'hug') return act('hug', 1500, 'grin');
-    if (c === 'well-done') { play(sounds.cheer); burst('confetti'); setCard({ title: 'Well done!', text: '⭐ ⭐ ⭐' }); await act('jump', 2000, 'proud'); await wait(1500); setCard(null); return; }
+    if (c === 'hug') { burst('hearts'); return act('hug', 1500, 'grin'); }
+    if (c === 'well-done') { play(sounds.cheer); burst('confetti'); word('Well done!', 1800); talk('Well done!'); await act('jump', 2000, 'proud'); return; }
     if (c === 'birthday') {
-      burst('confetti'); setCard({ title: 'Happy birthday! 🎂', text: s.childName ? `Hooray for ${s.childName}!` : 'Hooray!' });
-      await sing('birthday'); await act('dance', 2400, 'grin'); setCard(null); return;
+      burst('confetti'); word('Happy birthday!', 2200);
+      talk(s.childName ? `Happy birthday ${s.childName}!` : 'Happy birthday!');
+      await sing('birthday'); await act('dance', 2400, 'grin'); return;
     }
-    if (['count', 'colours', 'shapes', 'peekaboo'].includes(c)) { setGame(null); return startGame(c as 'count'); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [act, bye, sing, burst, s.childName, muted]);
+    const wanted = c === 'count' ? 'count' : c === 'peekaboo' ? 'peekaboo' : c === 'colours' ? 'colours' : c === 'shapes' ? 'shapes' : null;
+    if (wanted) { setGame(null); await wait(50); startGame(games.includes(wanted as GameId) ? (wanted as GameId) : 'count'); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [act, goNap, sing, burst, word, s.childName, games.join()]);
 
   useEffect(() => {
     let stop = false;
@@ -276,45 +419,44 @@ export function Player({ initial, base, tv = false }: { initial: BuddyState; bas
     return () => { stop = true; clearTimeout(t); };
   }, [base, tv, runCommand]);
 
-  // ── idle life, screensaver, play time and the session limit ──
+  // ── idle life, dozing off, play time and the session limit ──
   useEffect(() => {
     const iv = setInterval(() => {
       const p = phaseRef.current;
-      if (p === 'play' || p === 'game') played.current += 1;
+      if (['play', 'game', 'feed', 'picker', 'egg'].includes(p)) played.current += 1;
       if (played.current > 0 && played.current % 30 === 0) fetch(`${base}/api/ping`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ seconds: 30 }) }).catch(() => {});
-      if (p === 'play' && s.settings.sessionMinutes > 0 && played.current >= s.settings.sessionMinutes * 60) { bye('time'); return; }
-      if (p !== 'play' || busy.current) return;
+      if (['play', 'egg'].includes(p) && s.settings.sessionMinutes > 0 && played.current >= s.settings.sessionMinutes * 60) { goNap('time'); return; }
       const idle = Date.now() - lastInput.current;
-      if (idle > 120000) { setAction('float'); setMood('sleepy'); return; }
+      if (p === 'play' && !busy.current && idle > 120_000) { setPhase('doze'); setMood('asleep'); setAction('idle'); return; }
+      if (p !== 'play' || busy.current) return;
       if (Math.random() < 0.12) {
         const el = document.querySelector('.world .qb') as HTMLElement | null;
         el?.style.setProperty('--look-x', `${Math.round(Math.random() * 10 - 5)}px`);
         el?.style.setProperty('--look-y', `${Math.round(Math.random() * 6 - 3)}px`);
       }
-      if (Math.random() < 0.06) { busy.current = true; randomMove().finally(() => { busy.current = false; }); }
+      if (Math.random() < 0.05) {
+        const moves = a.moves.map((m) => MOVE_ACTION[m]).filter(Boolean);
+        busy.current = true;
+        act(moves.length ? pick(moves) : 'hop', 1600, 'grin').finally(() => { setMood('happy'); busy.current = false; });
+      }
     }, 1000);
     return () => clearInterval(iv);
-  }, [base, s.settings.sessionMinutes, bye, randomMove]);
+  }, [base, s.settings.sessionMinutes, goNap, a.moves, act]);
 
-  // ── parent gate: hold the lock for 2 seconds ──
-  const hold = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const gateDown = () => { hold.current = setTimeout(() => { window.location.href = `${base}/parent`; }, 2000); };
-  const gateUp = () => { if (hold.current) clearTimeout(hold.current); };
+  // Zzz while asleep.
+  useEffect(() => {
+    if (!['sleep', 'nap', 'doze'].includes(phase)) return;
+    const iv = setInterval(() => { if (mood === 'asleep' || phase === 'sleep') addFx({ kind: 'zzz', x: 58 + Math.random() * 6, y: eggMode ? 48 : 40 }, 2600); }, 1800);
+    return () => clearInterval(iv);
+  }, [phase, mood, addFx, eggMode]);
 
   const room = new Set(a.room);
-  const night = s.bedtimeNow || phase === 'bye';
-  const tools: { key: string; icon: string; label: string; on: () => void }[] = [];
-  if (phase === 'play') {
-    tools.push({ key: 'sing', icon: '🎵', label: 'Sing', on: () => { lastInput.current = Date.now(); if (!busy.current) { busy.current = true; sing().finally(() => { busy.current = false; }); } } });
-    if (games.count !== false && a.countTo >= 2) tools.push({ key: 'count', icon: '🔢', label: 'Count', on: () => startGame('count') });
-    if (games.peekaboo !== false && a.games.includes('peekaboo')) tools.push({ key: 'peek', icon: '🙈', label: 'Peekaboo', on: () => startGame('peekaboo') });
-    if (games.colours !== false && a.games.includes('colours')) tools.push({ key: 'colours', icon: '🎨', label: 'Colours', on: () => startGame('colours') });
-    if (games.shapes !== false && a.games.includes('shapes')) tools.push({ key: 'shapes', icon: '🔷', label: 'Shapes', on: () => startGame('shapes') });
-    if (a.moves.length) tools.push({ key: 'move', icon: '💃', label: 'Move', on: () => { lastInput.current = Date.now(); if (!busy.current) { busy.current = true; randomMove().finally(() => { busy.current = false; }); } } });
-  }
+  const night = s.bedtimeNow || phase === 'nap';
+  const showEgg = eggMode && phase !== 'intro';
+  const sleeping = phase === 'sleep' || phase === 'nap' || phase === 'doze';
 
   return (
-    <div className={`world${night ? ' night' : ''}${phase === 'play' || phase === 'game' ? ' has-tools' : ''}${phase === 'game' ? ' in-game' : ''}`} onPointerDown={() => { lastInput.current = Date.now(); if (action === 'float') { setAction('idle'); setMood('happy'); } }}>
+    <div className={`world${night ? ' night' : ''}${['play', 'feed', 'picker', 'egg'].includes(phase) ? ' has-tools' : ''}${phase === 'game' ? ' in-game' : ''}${phase === 'feed' ? ' feeding' : ''}`} onPointerDown={tapRoom}>
       {room.has('window') && <div className="window"><div className="sun" /><div className="cloud-bit" />{room.has('rainbow') && <div className="rainbow" />}</div>}
       {room.has('rug') && <div className="shelf"><div className="toys">{['🧸', '🎈', knows('room-plant') ? '🪀' : '', room.has('milestone-60') ? '🏅' : ''].filter(Boolean).map((t) => <span key={t}>{t}</span>)}</div></div>}
       {room.has('stars') && [8, 22, 38, 61, 77, 90].map((x, i) => <span key={x} className="ceiling-star" style={{ left: `${x}%`, top: `${4 + (i % 3) * 4}%`, animationDelay: `${i * 0.4}s` }}>★</span>)}
@@ -322,73 +464,66 @@ export function Player({ initial, base, tv = false }: { initial: BuddyState; bas
       <div className="floor" />
       {room.has('plant') && <div className="plant">🪴</div>}
       {room.has('moon') && <div className="moon" />}
-      <div className="name-tag">{s.name}{a.stage ? ` · ${a.stage.name}` : ''}</div>
 
-      {phase === 'hatch' ? (
-        <button className="egg" onClick={tapEgg} aria-label="Tap the egg" style={{ border: 0, background: 'none' }} key={eggTaps}>
-          <svg viewBox="0 0 200 240" className={`egg-svg${eggTaps ? ' wobble' : ''}`}>
-            <ellipse cx="100" cy="130" rx="84" ry="104" fill="#FFF8EC" stroke="#E7C98F" strokeWidth="6" />
-            <circle cx="70" cy="100" r="14" fill="#FFD98E" /><circle cx="128" cy="150" r="18" fill="#B4DAFF" /><circle cx="90" cy="180" r="10" fill="#FFCBB2" />
-            {eggTaps >= 1 && <path d="M40 120l20 10 14 -12 18 14 16 -12 20 10 14 -10 18 12" stroke="#C99A55" strokeWidth="5" fill="none" strokeLinejoin="round" />}
-            {eggTaps >= 2 && <path d="M60 80l14 12 12 -8" stroke="#C99A55" strokeWidth="4" fill="none" />}
-          </svg>
+      {showEgg ? (
+        <button className={`egg${phase === 'sleep' ? ' resting' : ''}`} onClick={(e) => { e.stopPropagation(); if (phase === 'sleep') wakeFromSleep(); else if (phase === 'nap') nudgeEgg(); else tapEgg(); }} onPointerDown={(e) => e.stopPropagation()} aria-label="The egg">
+          <Egg crack={egg.crack} peek={egg.crack >= 2} wobble={egg.wobble} glow={egg.glow} colour={Object.values(COLOUR_HEX)[s.slug.length % 7]} />
+          <span className="egg-days" aria-hidden="true">{[1, 2, 3, 4].map((d) => <i key={d} className={d <= a.eggDay ? 'on' : ''} />)}</span>
         </button>
       ) : (
-        <div className="stage">
+        <div className="stage" ref={stageRef} onPointerDown={(e) => e.stopPropagation()}>
           {room.has('rug') && <div className="rug" />}
-          <Buddy colour={s.colour} mood={mood} action={action} accessory={accessory} glow={glow} scale={a.stage.scale} sticker={room.has('milestone-30')} onTummy={tapTummy} onHead={tapHead} />
+          <Buddy colour={s.colour} mood={sleeping && phase !== 'doze' && mood !== 'sleepy' ? 'asleep' : mood} action={action} accessory={accessory} glow={glow} scale={a.stage.scale} sticker={room.has('milestone-30')} onTummy={touchBuddy} onHead={touchBuddy} />
         </div>
       )}
 
-      {/* games */}
-      {phase === 'game' && game?.kind === 'count' && (
-        <>
-          <div className="hint">Count with {s.name}!</div>
-          <div className="game-items">{Array.from({ length: game.n }, (_, i) => <button key={i} className={`game-item${game.got.includes(i) ? ' done' : ''}`} onClick={() => countTap(i)} style={{ color: '#FFB020' }} aria-label={`Star ${i + 1}`}>★</button>)}</div>
-          {game.k > 0 && <div className="count-big" key={game.k}>{game.k}</div>}
-        </>
-      )}
-      {phase === 'game' && game?.kind === 'pick' && (
-        <>
-          <div className="hint">{game.what === 'colours' ? 'Find this colour!' : `Find the ${game.target}!`} <span style={{ color: game.what === 'colours' ? COLOURS[game.target] : undefined, fontSize: '1.5em', verticalAlign: 'middle' }}>{game.what === 'colours' ? '●' : SHAPES[game.target]}</span></div>
-          <div className="game-items">{game.options.map((o, i) => (
-            <button key={o} className={`game-item bubble${game.wrong === o ? ' done' : ''}`} onClick={() => pickTap(o)} aria-label={o}
-              style={game.what === 'colours' ? { background: COLOURS[o], animationDelay: `${i * 0.3}s` } : { color: SHAPE_COLOURS[i % 5], animationDelay: `${i * 0.3}s` }}>
-              {game.what === 'shapes' ? SHAPES[o] : ''}
-            </button>
-          ))}</div>
-        </>
-      )}
-      {phase === 'game' && game?.kind === 'peekaboo' && <div className="hint">{game.hidden ? `Where’s ${s.name}? Tap!` : 'Boo!'}</div>}
+      {phase === 'game' && game && <Games key={game} game={game} ctx={{ band, ab: a }} api={gameApi} />}
 
-      {phase === 'play' && <div className="tools">{tools.map((t) => <button key={t.key} className="tool" onClick={t.on} aria-label={t.label} title={t.label}>{t.icon}</button>)}</div>}
-      {phase === 'game' && <div className="tools"><button className="tool" onClick={() => endGame(false)} aria-label="Stop the game">🏠</button></div>}
+      {(phase === 'play' || phase === 'egg') && (
+        <div className="tools" onPointerDown={(e) => e.stopPropagation()}>
+          {phase === 'play' && <button className="tool" onClick={openFeed} aria-label="Feed">🍎</button>}
+          {phase === 'play' && games.length > 0 && <button className="tool" onClick={() => { lastInput.current = Date.now(); setPhase('picker'); }} aria-label="Games">🎲</button>}
+          <button className="tool" onClick={() => { lastInput.current = Date.now(); if (busy.current) return; busy.current = true; if (phase === 'egg') setEgg((e) => ({ ...e, wobble: e.wobble + 1 })); sing().finally(() => { busy.current = false; }); }} aria-label="Sing">🎵</button>
+        </div>
+      )}
+      {phase === 'feed' && (
+        <div className="tray" onPointerDown={(e) => e.stopPropagation()}>
+          {SNACKS.map((e) => <button key={e} className="snack" onClick={(ev) => feedTap(e, ev)} aria-label="Snack">{e}</button>)}
+          <button className="snack home" onClick={() => setPhase('play')} aria-label="Done">✔️</button>
+        </div>
+      )}
+      {phase === 'picker' && (
+        <div className="picker" onPointerDown={(e) => e.stopPropagation()}>
+          {games.map((g) => <button key={g} className="tool" onClick={() => startGame(g)} aria-label={GAMES[g].name}>{GAMES[g].icon}</button>)}
+          <button className="tool home" onClick={() => setPhase('play')} aria-label="Back">🏠</button>
+        </div>
+      )}
+      {phase === 'game' && <div className="tools corner-home" onPointerDown={(e) => e.stopPropagation()}><button className="tool small" onClick={() => { setGame(null); setPhase('play'); }} aria-label="Stop the game">🏠</button></div>}
 
-      <div className="corner left">
-        <button onClick={() => setMuted(!muted)} aria-label={muted ? 'Sound on' : 'Sound off'}>{muted ? '🔇' : '🔊'}</button>
-        {!tv && s.tvPaired && <a href={`${base}/remote`} aria-label="Play on the TV">📺</a>}
+      <div className="words" aria-live="polite">{words.map((w) => <span key={w.id} style={{ animationDuration: `${w.ms}ms` }}>{w.text}</span>)}</div>
+
+      <div className="fx" aria-hidden="true">
+        {fx.map((e) => {
+          const pos = { left: `${e.x}%`, top: `${e.y}%` };
+          switch (e.kind) {
+            case 'sparkles': return <div key={e.id} className="sparkles" style={pos}>{Array.from({ length: 16 }, (_, i) => <i key={i} style={{ ['--dx' as string]: `${Math.cos(i) * 180}px`, ['--dy' as string]: `${Math.sin(i * 1.3) * 160}px`, animationDelay: `${(i % 4) * 0.08}s` }} />)}</div>;
+            case 'hearts': return <div key={e.id} className="hearts" style={pos}>{Array.from({ length: 7 }, (_, i) => <i key={i} style={{ ['--dx' as string]: `${(i - 3) * 38}px`, animationDelay: `${i * 0.09}s` }}>♥</i>)}</div>;
+            case 'confetti': return <div key={e.id} className="confetti">{Array.from({ length: 36 }, (_, i) => <i key={i} style={{ left: `${(i * 37) % 100}%`, background: ['#EF5B5B', '#FFD23F', '#4C8DF6', '#3FB984', '#FF7EB6', '#9B6BDF'][i % 6], animationDelay: `${(i % 9) * 0.12}s`, animationDuration: `${3 + (i % 5) * 0.3}s` }} />)}</div>;
+            case 'note': return <span key={e.id} className="note" style={pos}>♪</span>;
+            case 'bubble': return <span key={e.id} className="bubble-pop" style={{ ...pos, background: e.c }} />;
+            case 'fly': return <span key={e.id} className="fly" style={{ left: e.x, top: e.y, ['--dx' as string]: `${e.dx}px`, ['--dy' as string]: `${e.dy}px` }}>{e.e}</span>;
+            case 'mail': return <span key={e.id} className="mail" style={pos}>💌</span>;
+            case 'zzz': return <span key={e.id} className="zzz" style={pos}>z</span>;
+          }
+        })}
       </div>
-      <div className="corner right">
-        <button onPointerDown={gateDown} onPointerUp={gateUp} onPointerLeave={gateUp} aria-label="Grown-ups: hold for 2 seconds" title="Grown-ups: hold for 2 seconds">🔒</button>
-      </div>
 
-      {fx.map((e) => e.kind === 'sparkles' ? (
-        <div key={e.id} className="sparkles" style={{ position: 'absolute', left: '50%', top: '40%' }}>
-          {Array.from({ length: 16 }, (_, i) => <i key={i} style={{ ['--dx' as string]: `${Math.cos(i) * 180}px`, ['--dy' as string]: `${Math.sin(i * 1.3) * 160}px`, animationDelay: `${(i % 4) * 0.08}s` }} />)}
-        </div>
-      ) : e.kind === 'confetti' ? (
-        <div key={e.id} className="confetti">{Array.from({ length: 36 }, (_, i) => <i key={i} style={{ left: `${(i * 37) % 100}%`, background: ['#EF5B5B', '#FFD23F', '#4C8DF6', '#3FB984', '#FF7EB6', '#9B6BDF'][i % 6], animationDelay: `${(i % 9) * 0.12}s`, animationDuration: `${3 + (i % 5) * 0.3}s` }} />)}</div>
-      ) : (
-        <span key={e.id} className="note" style={{ left: `${e.x}%`, top: '45%' }}>♪</span>
-      ))}
-
-      {card && <div className="overlay"><div className="big-card"><h2>{card.title}</h2>{card.text && <p>{card.text}</p>}</div></div>}
-
-      {phase === 'asleep' && (
-        <div className="overlay dim">
-          <button className="wake" onClick={wake} autoFocus>{s.today?.id === 'hatch' && s.today.isNew ? '🥚 Tap to meet your buddy' : `☀️ Wake up ${s.name}`}</button>
-        </div>
-      )}
+      {!tv && <ParentGate base={base} />}
+      {phase === 'sleep' && <div className="tap-hint" aria-hidden="true">👆</div>}
     </div>
   );
 }
+
+// The hatching animation plays once per device, the first time the buddy is opened after it hatches.
+function seenHatch(slug: string) { try { return localStorage.getItem(`qb-hatched-${slug}`) === '1'; } catch { return false; } }
+function markHatched(slug: string) { try { localStorage.setItem(`qb-hatched-${slug}`, '1'); } catch { /* private mode */ } }

@@ -38,7 +38,7 @@ export function SiteFoot() {
         <nav aria-label={PRODUCT}>
           <Link href="/">Home</Link>
           <Link href="/start">Make a buddy</Link>
-          <a href={LOGIN_URL}>Parent login</a>
+          <a href={LOGIN_URL}>Open my buddy</a>
           <Link href="/#safety">Safety</Link>
           <Link href="/#questions">FAQ</Link>
           <Link href="/privacy">Privacy</Link>

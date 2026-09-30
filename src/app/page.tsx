@@ -5,8 +5,10 @@ import { APP_URL, BUDDY_DOMAIN, PRICES, PRODUCT, TRIAL_DAYS } from '@/lib/config
 
 const FAQ = [
   ['What age is it for?', 'QR is designed for 2 to 6 year olds. Everything is big, tappable and spoken, so no reading is needed. You set the learning mix and the play limits.'],
-  ['Does my child need an account or a tablet?', 'No accounts for kids, ever. QR opens from a printed QR card on a phone or tablet, or on any smart TV’s web browser. Nothing to install.'],
+  ['Does my child need an account or a tablet?', 'No accounts for kids, ever. You get a buddy code (like MOON-TIGER-APPLE-27): scan the printed QR card or type the code on any phone, tablet or smart TV and it remembers your buddy. Nothing to install.'],
+  ['How does hatching work?', 'Your buddy arrives as an egg. Each visit it wiggles and cracks a little more, eyes peek out on day three, and on the fourth visit your child taps it open. Then it learns one new thing every day.'],
   ['What does “grows every day” mean?', 'Each day your child visits, QR learns one new thing: a sound, a move, a colour, a number, a song, a hat. Skipping a day loses nothing. It just picks up where it left off.'],
+  ['What will my child learn?', 'You pick an age. Ages 2 to 3 play colours, shapes, animal sounds, big and small, counting to 5 and peekaboo. Ages 4 to 5 add counting to 10, how many, more or fewer, patterns, letters and memory pairs. Ages 6 and up add adding and taking away, first sounds of words and counting to 20. Every instruction is spoken, and nothing ever fails.'],
   ['Is there chat, ads or anything to buy?', 'No. There is no chat, no strangers, no ads, no links out and nothing to buy inside the buddy. Only you, on the parent page, can change things.'],
   ['How do screen-time limits work?', 'You pick how long one play lasts (QR says a friendly goodbye), a daily cap, and bedtime. At bedtime QR sings a lullaby and goes to sleep until the morning.'],
   ['Can I cancel?', TRIAL_DAYS > 0 ? `Yes, any time from the parent page. The first ${TRIAL_DAYS} days are free, and you won’t be charged if you cancel before the trial ends.` : 'Yes, any time from the parent page. Your buddy keeps working until the end of the period you’ve paid for.'],
@@ -54,7 +56,7 @@ export default function Home() {
           <h2 className="center">Three steps to hatching</h2>
           <ol className="steps">
             <li><h3>Name it and pick a colour</h3><p>Teddy, Moana, Pickle… the name becomes its own web address. Takes a minute.</p></li>
-            <li><h3>Print the QR card</h3><p>Your child scans it with a phone or tablet (or you pair the TV with a 6-digit code) and QR hatches.</p></li>
+            <li><h3>Scan the card or type the code</h3><p>An egg arrives. It wiggles and cracks a little more each visit, and hatches on the fourth. Works on phones, tablets and TVs.</p></li>
             <li><h3>Visit every day</h3><p>Each visit, QR shows off something new it learned. You see the whole timeline on the parent page.</p></li>
           </ol>
         </div>

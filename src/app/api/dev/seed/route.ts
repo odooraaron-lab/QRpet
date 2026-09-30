@@ -7,7 +7,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Local testing only: /api/dev/seed?name=teddy&days=12 makes an active buddy, fakes N days of growth,
+ * Local testing only: /api/dev/seed?name=teddy&days=12&age=2-3 makes an active buddy, fakes N days of growth,
  * remembers this browser as a device and as the parent, and opens it. Off in production.
  */
 export async function GET(req: Request) {
@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   const sql = await db();
   if (!(await getBuddy(slug)) || q.get('reset')) {
     await sql`delete from qb_buddies where slug = ${slug}`;
-    await createPending({ slug, email: q.get('email') || 'dev@example.com', colour: q.get('colour') || 'honey', childName: q.get('child') ?? 'Poppy', ageBand: '4-5', plan: 'monthly' });
+    await createPending({ slug, email: q.get('email') || 'dev@example.com', colour: q.get('colour') || 'honey', childName: q.get('child') ?? 'Poppy', ageBand: ['2-3', '4-5', '6+'].includes(q.get('age') || '') ? q.get('age')! : '4-5', plan: 'monthly' });
     await activate(slug);
     // Fake earlier days so today's visit is day days+1.
     const { nextItem, ITEM } = await import('@/lib/growth');
@@ -32,6 +32,8 @@ export async function GET(req: Request) {
     }
     await sql`update qb_buddies set visit_day = ${learned.length} where slug = ${slug}`;
   }
+  // &awake=1: no bedtime, so testing works at any hour.
+  if (q.get('awake')) await sql`update qb_buddies set settings = settings || '{"bedtime":"23:59","wakeTime":"00:01","dailyCapMinutes":0}'::jsonb where slug = ${slug}`;
   const t = await createDevice(slug, q.get('tv') ? 'tv' : 'phone', 'Dev browser');
   const c = await cookies();
   c.set(deviceCookie(slug), t, cookieOpts(30));

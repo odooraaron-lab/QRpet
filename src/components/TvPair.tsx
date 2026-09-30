@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Buddy } from './Buddy';
+import { CodeEntry } from './CodeEntry';
 
 /** The TV side of pairing: shows a 6-digit code and waits for the parent to type it in. */
 export function TvPair({ base, colour, name, address }: { base: string; colour: string; name: string; address: string }) {
@@ -33,6 +34,10 @@ export function TvPair({ base, colour, name, address }: { base: string; colour: 
           <p>On the parent page, tap <b>Connect a TV</b> and type this code:</p>
           <div style={{ fontFamily: 'var(--display)', fontSize: 'min(12vw, 11vh)', fontWeight: 800, letterSpacing: '0.12em', color: 'var(--ink)', margin: '10px 0' }}>{code ? `${code.slice(0, 3)} ${code.slice(3)}` : '… …'}</div>
           <p style={{ fontSize: 'min(3.4vw, 2.4vh)' }}>{err || `This TV remembers ${pretty} after that. Address: ${address}/tv`}</p>
+          <details style={{ marginTop: 10, textAlign: 'left' }}>
+            <summary style={{ cursor: 'pointer', fontFamily: 'var(--font)', fontWeight: 800 }}>Or type the buddy code</summary>
+            <div style={{ marginTop: 10 }}><CodeEntry base={base} tv /></div>
+          </details>
         </div>
       </div>
       <div className="stage" style={{ width: 'min(36vw, 34vh)' }}><Buddy colour={colour} mood="happy" action="sway" /></div>

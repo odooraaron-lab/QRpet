@@ -6,7 +6,7 @@
 // Add items anywhere; ids must never change (families' timelines store them).
 // ─────────────────────────────────────────────────────────────
 
-export type Track = 'sounds' | 'moves' | 'counting' | 'colours' | 'shapes' | 'feelings' | 'songs' | 'dress' | 'room' | 'games';
+export type Track = 'egg' | 'sounds' | 'moves' | 'counting' | 'colours' | 'shapes' | 'feelings' | 'songs' | 'dress' | 'room' | 'games';
 
 export type Item = { id: string; track: Track; title: string; minDay?: number };
 
@@ -20,6 +20,10 @@ export const FOCUS: Record<string, Track[]> = {
 };
 
 export const CATALOGUE: Item[] = [
+  // The egg: three visits of build-up, then it hatches on the fourth. Always first, whatever the sliders say.
+  { id: 'egg-1', track: 'egg', title: 'An egg arrived! It wiggles when you tap it' },
+  { id: 'egg-2', track: 'egg', title: 'A little crack appeared in the egg' },
+  { id: 'egg-3', track: 'egg', title: 'Two eyes peeked out of the crack' },
   { id: 'hatch', track: 'room', title: 'Hatched from a plush egg and said its first “boo-OP”' },
   { id: 'sound-giggle', track: 'sounds', title: 'Giggles when you tickle its tummy' },
   { id: 'move-wave', track: 'moves', title: 'Waves hello' },
@@ -94,8 +98,12 @@ export const ITEM = Object.fromEntries(CATALOGUE.map((i) => [i.id, i])) as Recor
  * divided by the parent's weight for it (weight 2 = comes twice as soon), and the same track never
  * three days running. Past the end of the list, QR keeps visiting with a daily "sparkle" and no new item.
  */
+export const EGG_STEPS = ['egg-1', 'egg-2', 'egg-3', 'hatch'];
+
 export function nextItem(learned: string[], visitDay: number, weights: Partial<Record<string, number>> = {}, recentTracks: Track[] = []): Item | null {
   const have = new Set(learned);
+  // Hatching comes first, one step a visit. Buddies that hatched before the egg stage existed skip it.
+  if (!have.has('hatch')) return ITEM[EGG_STEPS.find((id) => !have.has(id))!];
   const trackWeight = (t: Track) => {
     let w = 1;
     for (const [focus, tracks] of Object.entries(FOCUS)) if (tracks.includes(t)) w = Math.max(0.25, Number(weights[focus] ?? 1));
@@ -104,7 +112,7 @@ export function nextItem(learned: string[], visitDay: number, weights: Partial<R
   const blocked = recentTracks.length >= 2 && recentTracks[0] === recentTracks[1] ? recentTracks[0] : null;
   let best: { item: Item; score: number } | null = null;
   CATALOGUE.forEach((item, i) => {
-    if (have.has(item.id) || (item.minDay && visitDay < item.minDay)) return;
+    if (have.has(item.id) || item.track === 'egg' || (item.minDay && visitDay < item.minDay)) return;
     if (item.track === blocked && item.id !== 'hatch') return;
     const score = i / trackWeight(item.track);
     if (!best || score < best.score) best = { item, score };
@@ -115,6 +123,9 @@ export function nextItem(learned: string[], visitDay: number, weights: Partial<R
 // ── What QR can do, from what it has learned (used by the player and the parent page) ──
 export type Abilities = {
   stage: { name: string; scale: number };
+  hatched: boolean;
+  eggDay: number; // 1 to 3 while still an egg (how cracked it is), 4 on hatching day
+
   countTo: number;
   countBack: boolean;
   countEvens: boolean;
@@ -130,8 +141,9 @@ export type Abilities = {
 };
 
 export const STAGES = [
-  { from: 1, name: 'Hatchling', scale: 0.78 },
-  { from: 8, name: 'Sprout', scale: 0.88 },
+  { from: 1, name: 'Egg', scale: 0.78 },
+  { from: 4, name: 'Hatchling', scale: 0.78 },
+  { from: 11, name: 'Sprout', scale: 0.88 },
   { from: 31, name: 'Buddy', scale: 1 },
   { from: 91, name: 'Star', scale: 1.04 },
   { from: 365, name: 'Legend', scale: 1.06 },
@@ -146,7 +158,9 @@ export function abilities(learned: string[], visitDay: number): Abilities {
   if (ids.has('colour-yellow')) games.push('colours');
   if (ids.has('shape-triangle')) games.push('shapes');
   return {
-    stage: { name: stage.name, scale: stage.scale },
+    stage: { name: ids.has('hatch') ? (stage.name === 'Egg' ? 'Hatchling' : stage.name) : 'Egg', scale: stage.scale },
+    hatched: ids.has('hatch'),
+    eggDay: ids.has('hatch') ? 4 : EGG_STEPS.filter((id) => ids.has(id)).length,
     countTo: counts.length ? Math.max(...counts) : 1,
     countBack: ids.has('count-back'),
     countEvens: ids.has('count-evens'),

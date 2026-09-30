@@ -15,6 +15,7 @@ const VOLUME = { low: 0.25, medium: 0.5, high: 0.75 };
 
 /** Must be called from a tap (browsers only allow sound after the user touches the page). */
 export function unlockAudio(volume: keyof typeof VOLUME = 'medium') {
+  if (typeof window === 'undefined') return;
   level = VOLUME[volume] ?? 0.5;
   if (!ctx) {
     const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -74,6 +75,15 @@ export const sounds = {
   hatch() { [0, 0.25, 0.5].forEach((at) => tone({ hz: 300, at, dur: 0.08, type: 'square', gain: 0.05 })); setTimeout(() => sounds.trill(), 800); },
   /** One note per number, climbing the scale. */
   count(n: number) { mallet(noteHz(n - 1), 0, 0.45, 0.3); },
+  chomp() { [0, 0.16, 0.32].forEach((at) => { tone({ hz: 220, at, dur: 0.07, type: 'square', gain: 0.06, bendTo: 140 }); tone({ hz: 480, at: at + 0.03, dur: 0.06, type: 'triangle', gain: 0.08 }); }); },
+  yum() { tone({ hz: 523, dur: 0.22, bendTo: 660, type: 'triangle', gain: 0.18, attack: 0.04 }); tone({ hz: 660, at: 0.22, dur: 0.35, bendTo: 523, type: 'triangle', gain: 0.18 }); },
+  burp() { tone({ hz: 140, dur: 0.35, bendTo: 95, type: 'sawtooth', gain: 0.05, attack: 0.03 }); setTimeout(() => sounds.giggle(), 420); },
+  achoo() { tone({ hz: 700, dur: 0.5, bendTo: 1000, type: 'triangle', gain: 0.1, attack: 0.3 }); tone({ hz: 1800, at: 0.55, dur: 0.18, bendTo: 400, type: 'square', gain: 0.05 }); },
+  boing() { tone({ hz: 180, dur: 0.5, bendTo: 720, type: 'sine', gain: 0.25 }); },
+  knock() { [0, 0.18].forEach((at) => tone({ hz: 260, at, dur: 0.07, type: 'square', gain: 0.07, bendTo: 180 })); },
+  kiss() { tone({ hz: 1400, dur: 0.08, bendTo: 2400, type: 'sine', gain: 0.15 }); },
+  /** Tapping the room: a bubble pop on a random note (cause and effect for little ones). */
+  bubble(step?: number) { mallet(noteHz(step ?? 5 + Math.floor(Math.random() * 8)), 0, 0.3, 0.16); },
   cheer() { [0, 2, 4, 5, 7].forEach((s, i) => mallet(noteHz(s), i * 0.09, 0.4, 0.22)); mallet(noteHz(10), 0.5, 0.9, 0.25); },
 };
 
@@ -99,13 +109,16 @@ export function playSong(id: string, onNote?: (i: number) => void) {
   return Math.round(s.steps.length * s.beat * 1000) + 400;
 }
 
-/** Reads words aloud with the device's own voice, gently. Used for numbers and parent messages. */
-export function say(text: string) {
+/** QR's own little voice: higher and quicker than instructions. Short words only ("Yum!", "Hi Sally!"). */
+export function talk(text: string) { say(text, 1.8, 1.05); }
+
+/** Reads words aloud with the device's own voice, gently. Used for instructions, numbers and parent messages. */
+export function say(text: string, pitch = 1.25, rate = 0.9) {
   try {
     if (!('speechSynthesis' in window)) return;
     const u = new SpeechSynthesisUtterance(text);
-    u.rate = 0.9;
-    u.pitch = 1.25;
+    u.rate = rate;
+    u.pitch = pitch;
     u.volume = Math.min(1, level + 0.3);
     const v = speechSynthesis.getVoices().find((x) => /en[-_](NZ|AU|GB)/i.test(x.lang)) ?? speechSynthesis.getVoices().find((x) => x.lang.startsWith('en'));
     if (v) u.voice = v;

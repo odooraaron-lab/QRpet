@@ -13,6 +13,9 @@ import { stripe } from '@/lib/stripe';
 import { reportToHQ } from '@/lib/hq';
 import { buddyUrl, isClean } from '@/lib/config';
 import { db } from '@/lib/db';
+import { GAMES, BANDS } from '@/lib/learning';
+import { validPin } from '@/lib/codes';
+import { setPin } from '@/lib/buddies';
 
 export const runtime = 'nodejs';
 
@@ -44,11 +47,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
       if (['low', 'medium', 'high'].includes(s.volume)) next.volume = s.volume;
       if (typeof s.readAloud === 'boolean') next.readAloud = s.readAloud;
       if (typeof s.paused === 'boolean') next.paused = s.paused;
-      if (s.games) next.games = Object.fromEntries(Object.keys(cur.games).map((k) => [k, s.games[k] !== false]));
+      if (s.games) next.games = Object.fromEntries(Object.keys(GAMES).map((k) => [k, k in s.games ? s.games[k] !== false : cur.games[k] !== false]));
       if ('accessory' in s) next.accessory = s.accessory === null || dress.includes(s.accessory) ? s.accessory : cur.accessory;
       const patch: Parameters<typeof updateBuddy>[1] = { settings: next };
       if (b.colour && PALETTES[b.colour]) patch.colour = b.colour;
       if (typeof b.childName === 'string') patch.child_name = text(b.childName, 24);
+      if (BANDS.includes(b.ageBand)) patch.age_band = b.ageBand;
       if (typeof b.tz === 'string' && Intl.supportedValuesOf('timeZone').includes(b.tz)) patch.tz = b.tz;
       await updateBuddy(slug, patch);
       await pushCommand(slug, 'refresh');
@@ -82,9 +86,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ slug: string }
       await removeDevice(slug, String(b.id || ''));
       return Response.json({ ok: true });
     case 'card.new': {
-      // A lost card: the old QR stops working, and phones that scanned it have to scan the new one.
-      await newCardKey(slug);
+      // A lost card or a leaked code: the old code and QR stop working, and phones that used them are signed out.
+      const code = await newCardKey(slug);
       for (const d of await devices(slug)) if (d.kind === 'phone') await removeDevice(slug, d.id);
+      return Response.json({ ok: true, code });
+    }
+    case 'pin.set': {
+      if (!validPin(b.pin)) return Response.json({ error: 'The PIN must be 4 numbers.' }, { status: 400 });
+      await setPin(slug, b.pin);
       return Response.json({ ok: true });
     }
     case 'billing': {

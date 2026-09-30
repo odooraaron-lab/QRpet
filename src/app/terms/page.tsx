@@ -11,7 +11,7 @@ export default function Terms() {
       <main className="narrow section">
         <h1>Terms</h1>
         <h3>The subscription</h3>
-        <p>{PRODUCT} costs {PRICES.monthly.label} or {PRICES.yearly.label} (NZD, including GST), after a {TRIAL_DAYS}-day free trial. It renews automatically until you cancel from the parent page. Cancelling stops the next payment; there are no part-period refunds, but if something went wrong just email us.</p>
+        <p>{PRODUCT} costs {PRICES.monthly.label} or {PRICES.yearly.label} (NZD, including GST){TRIAL_DAYS > 0 ? `, after a ${TRIAL_DAYS}-day free trial` : ''}. It renews automatically until you cancel from the parent page. Cancelling stops the next payment; there are no part-period refunds, but if something went wrong just email us.</p>
         <h3>Buddy names</h3>
         <p>A buddy’s name is also its web address. We can change or remove names that are offensive, misleading or belong to someone else’s brand.</p>
         <h3>Grown-ups in charge</h3>

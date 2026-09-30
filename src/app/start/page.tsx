@@ -3,7 +3,7 @@ import { StartForm } from '@/components/StartForm';
 import { SiteFoot, SiteHead } from '@/components/Site';
 import { APP_URL, BUDDY_DOMAIN, PRICES, TRIAL_DAYS } from '@/lib/config';
 
-export const metadata: Metadata = { title: 'Make your buddy', description: 'Name your QR buddy, pick a colour and start a free trial. Takes a minute.', alternates: { canonical: '/start' } };
+export const metadata: Metadata = { title: 'Make your buddy', description: 'Name your QR buddy, pick a colour and you’re away. Takes a minute.', alternates: { canonical: '/start' } };
 
 export default async function Start({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const q = await searchParams;

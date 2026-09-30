@@ -9,7 +9,7 @@ const FAQ = [
   ['What does “grows every day” mean?', 'Each day your child visits, QR learns one new thing: a sound, a move, a colour, a number, a song, a hat. Skipping a day loses nothing. It just picks up where it left off.'],
   ['Is there chat, ads or anything to buy?', 'No. There is no chat, no strangers, no ads, no links out and nothing to buy inside the buddy. Only you, on the parent page, can change things.'],
   ['How do screen-time limits work?', 'You pick how long one play lasts (QR says a friendly goodbye), a daily cap, and bedtime. At bedtime QR sings a lullaby and goes to sleep until the morning.'],
-  ['Can I cancel?', `Yes, any time from the parent page. The first ${TRIAL_DAYS} days are free, and you won’t be charged if you cancel before the trial ends.`],
+  ['Can I cancel?', TRIAL_DAYS > 0 ? `Yes, any time from the parent page. The first ${TRIAL_DAYS} days are free, and you won’t be charged if you cancel before the trial ends.` : 'Yes, any time from the parent page. Your buddy keeps working until the end of the period you’ve paid for.'],
   ['What do you store?', 'Your email, the buddy’s name and colour, your child’s first name (optional) and what QR has learned. No photos, no voice recordings, no location. See the privacy page.'],
 ];
 
@@ -37,7 +37,7 @@ export default function Home() {
               <a href="#how" className="btn ghost">How it works</a>
             </div>
             <ul className="ticks">
-              <li>{TRIAL_DAYS} days free, then {PRICES.monthly.label}</li>
+              <li>{TRIAL_DAYS > 0 ? `${TRIAL_DAYS} days free, then ${PRICES.monthly.label}` : `Just ${PRICES.monthly.label}`}</li>
               <li>No ads, no chat, nothing to buy inside</li>
               <li>Its own address, like <b>{example}</b></li>
             </ul>
@@ -92,10 +92,10 @@ export default function Home() {
       <section className="section" style={{ background: 'var(--lilac-soft)' }} id="pricing">
         <div className="wrap">
           <h2 className="center">Simple pricing</h2>
-          <p className="lede center" style={{ margin: '0 auto 24px' }}>{TRIAL_DAYS} days free. Cancel any time from the parent page.</p>
+          <p className="lede center" style={{ margin: '0 auto 24px' }}>{TRIAL_DAYS > 0 ? `${TRIAL_DAYS} days free. ` : ''}Cancel any time from the parent page.</p>
           <div className="price-row">
-            <div className="price"><h3>Monthly</h3><div className="amount">{PRICES.monthly.label.replace(/ a month/, '')}</div><p className="muted">a month</p><Link href="/start?plan=monthly" className="btn ghost block">Start free trial</Link></div>
-            <div className="price best"><h3>Yearly</h3><div className="amount">{PRICES.yearly.label.replace(/ a year/, '')}</div><p className="muted">a year (about 5 months free)</p><Link href="/start?plan=yearly" className="btn block">Start free trial</Link></div>
+            <div className="price"><h3>Monthly</h3><div className="amount">{PRICES.monthly.label.replace(/ a month/, '')}</div><p className="muted">a month</p><Link href="/start?plan=monthly" className="btn ghost block">{TRIAL_DAYS > 0 ? 'Start free trial' : 'Choose monthly'}</Link></div>
+            <div className="price best"><h3>Yearly</h3><div className="amount">{PRICES.yearly.label.replace(/ a year/, '')}</div><p className="muted">a year (best value)</p><Link href="/start?plan=yearly" className="btn block">{TRIAL_DAYS > 0 ? 'Start free trial' : 'Choose yearly'}</Link></div>
           </div>
         </div>
       </section>

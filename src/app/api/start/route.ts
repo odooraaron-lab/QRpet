@@ -10,7 +10,7 @@ export const runtime = 'nodejs';
 
 const clean = (v: unknown, max: number) => String(v ?? '').replace(/[^\p{L}\p{M}' -]/gu, '').replace(/\s+/g, ' ').trim().slice(0, max);
 
-/** Sign-up: hold the name, then Stripe Checkout for the subscription (with the free trial). */
+/** Sign-up: hold the name, then Stripe Checkout for the subscription (with the free trial, if TRIAL_DAYS > 0). */
 export async function POST(req: Request) {
   if (rateLimited(req, 'start', 20)) return Response.json({ error: 'Too many tries. Please wait a few minutes.' }, { status: 429 });
   const b = await req.json().catch(() => ({}));

@@ -1,0 +1,90 @@
+# QR Buddy
+
+A gentle digital buddy for 2 to 6 year olds, by myQR. QR hatches on the family TV or tablet and learns one
+new thing every day the child visits. Parents steer it from a parent page. No ads, no chat, nothing to buy
+inside.
+
+- Sales site and sign-up: **create.myqr.co.nz**
+- Parent login: **login.myqr.co.nz**
+- Each buddy: **teddy.myqr.co.nz** (the TV at `/tv`, the parent page at `/parent`)
+
+Concept and plan: [docs/AS-BUILT.md](docs/AS-BUILT.md) (links the full concept doc).
+
+Stack: Next.js 15, React 19, Neon Postgres, Stripe subscriptions, Resend, Vercel.
+
+## Run it on your computer
+
+```bash
+npm install
+# a local Postgres, e.g.  createuser qb -P ; createdb -O qb qbdev
+echo 'DATABASE_URL=postgres://qb:qb@localhost:5432/qbdev' > .env.local
+npm run dev
+```
+
+Tables create themselves on first use (same SQL in `sql/schema.sql`). Without Stripe keys, sign-up skips
+payment. Without Resend, emails (with the sign-in link) are printed in the terminal.
+
+Shortcuts, local only:
+
+- `/api/dev/seed?name=teddy&days=24` makes a buddy that is 24 days old and signs this browser in as both
+  the child's device and the parent. Add `&reset=1` to start again, `&colour=mint`, `&tv=1` for TV mode.
+- `teddy.localhost:3000` works like `teddy.myqr.co.nz` when you set `BUDDY_DOMAIN=localhost`.
+
+## Deploy (Vercel)
+
+1. **New project** from this repo. Framework: Next.js.
+2. **Environment variables**: copy `.env.example`, fill it in and paste the whole thing into
+   Settings → Environment Variables. You need at least:
+   - `DATABASE_URL`
+   - `SESSION_SECRET` (a long random string)
+   - the Stripe keys and prices
+   - `RESEND_API_KEY`
+   - `HQ_SECRET`
+   - `CRON_SECRET`
+3. **Domains** (Settings → Domains): add `create.myqr.co.nz` and `login.myqr.co.nz`.
+   - Do **not** add `*.myqr.co.nz`: the party site already owns the wildcard.
+   - The party site forwards buddy names here (see below).
+4. **Stripe**:
+   - Make a product "QR Buddy" with two recurring prices: $4.99 NZD monthly and $39 NZD yearly. Put their
+     IDs in `STRIPE_PRICE_MONTHLY` and `STRIPE_PRICE_YEARLY`.
+   - Add a webhook endpoint at `https://create.myqr.co.nz/api/stripe/webhook` with these events:
+     - `checkout.session.completed`
+     - `customer.subscription.updated`
+     - `customer.subscription.deleted`
+   - Put its signing secret in `STRIPE_WEBHOOK_SECRET`.
+   - Turn on the customer portal (Settings → Billing → Customer portal). Parents use it for receipts, card
+     changes and cancelling.
+   - Every myQR app shares the Stripe account. This app only acts on events tagged `metadata.product = buddy`.
+5. **Admin**: in admin.myqr.co.nz add a product with code `buddy`, or set `HQ_PRODUCT` to whatever code you
+   use. Set its action URL to `https://create.myqr.co.nz/api/hq/action` and give both sides the same
+   `HQ_SECRET`.
+6. **Party site** (party-kit): set `BUDDY_ORIGIN=https://create.myqr.co.nz` there and redeploy it.
+   - `teddy.myqr.co.nz` is then forwarded to this app.
+   - New parties never take a buddy's name.
+   - This app asks the party site (`PARTY_SITE_URL/api/slug-status`) before giving out a name.
+7. **Assets**: keep `ASSET_PREFIX=https://create.myqr.co.nz`. Buddy pages are served through the party
+   site's domain, so their scripts must load from this app's own address.
+
+## How it fits together
+
+| Path | What |
+| --- | --- |
+| `src/lib/growth.ts` | The catalogue of everything QR learns, stages, and what QR can do from what it has learned |
+| `src/lib/buddies.ts` | Database access; `visitToday` is the daily step (one unlock per visit day) |
+| `src/components/Buddy.tsx` | The character (SVG + CSS; the Rive rig replaces this file) |
+| `src/components/Player.tsx` | The child's screen: hatch, greet, reveal, games, songs, limits, bedtime |
+| `src/lib/sound.ts` | Synthesised sounds and songs (to be replaced by the recorded set) |
+| `src/components/Dashboard.tsx` + `src/app/b/[slug]/api/parent` | Parent page and its actions |
+| `src/app/b/[slug]/go` | The QR card's target: checks the card key and remembers this device |
+| `src/app/b/[slug]/tv`, `api/pair` | TV pairing with a 6-digit code |
+| `src/app/api/start`, `api/stripe/webhook`, `start/done` | Sign-up and payment |
+| `src/middleware.ts` | `login.` host → `/login`; `teddy.<BUDDY_DOMAIN>` → `/b/teddy` |
+
+Who can open a buddy:
+
+- A device that scanned the card. It gets a random token, stored hashed.
+- A paired TV.
+- The parent, signed in with an emailed link. The session is signed with `SESSION_SECRET` and lasts 30 days.
+
+Anyone else sees "Ask a grown-up to scan your card". "Lost the card?" on the parent page makes a new card key
+and signs out phones that used the old one.

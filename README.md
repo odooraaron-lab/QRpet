@@ -72,7 +72,8 @@ Shortcuts, local only:
 | --- | --- |
 | `src/lib/growth.ts` | The catalogue of everything QR learns, stages, and what QR can do from what it has learned |
 | `src/lib/buddies.ts` | Database access; `visitToday` is the daily step (one unlock per visit day) |
-| `src/components/Buddy.tsx` | The character (SVG + CSS; the Rive rig replaces this file) |
+| `src/components/buddy/` | The designer's character package: SVG buddy (works today) that switches to the Rive file when `NEXT_PUBLIC_BUDDY_RIVE` is set; `buddy.css` holds its drawing and moves |
+| `src/components/Buddy.tsx` | Thin adapter: the app's props (colour, mood, action, accessory, stage, taps) → the package |
 | `src/components/Player.tsx` | The child's screen: hatch, greet, reveal, games, songs, limits, bedtime |
 | `src/lib/sound.ts` | Synthesised sounds and songs (to be replaced by the recorded set) |
 | `src/components/Dashboard.tsx` + `src/app/b/[slug]/api/parent` | Parent page and its actions |
@@ -93,3 +94,20 @@ Who can open a buddy:
 Anyone else sees a box to type the buddy code. "New code" on the parent page replaces the code and card and
 signs out phones that used the old one. Age-based games live in `src/lib/learning.ts` and
 `src/components/Games.tsx`. Research notes are in [docs/RESEARCH.md](docs/RESEARCH.md).
+
+## Rive animation
+
+The character package in `src/components/buddy/` shows the SVG buddy and, when a Rive file is configured,
+cross-fades to it after checking it has artboard `QR`, state machine `Main` and View Model `Buddy`.
+
+1. Put `qr-buddy.riv` in `public/rive/`.
+2. Set `NEXT_PUBLIC_BUDDY_RIVE=https://create.myqr.co.nz/rive/qr-buddy.riv` in Vercel and redeploy.
+
+Use the full address, because buddies are served on teddy.myqr.co.nz. `/rive/*` sends CORS headers.
+
+- Only the buddy on the kid screen loads Rive; small pictures elsewhere stay SVG.
+- If the file is missing or doesn't match, the SVG stays and the browser console says why.
+- The app's two extra moves, `eat` and `shake`, play as `hop` and `giggle` in Rive until the animator adds them
+  to the `action` enum.
+- The package's recorded-sound player (`buddyAudio.ts`) is included but not switched on yet. The app still
+  uses `src/lib/sound.ts`.

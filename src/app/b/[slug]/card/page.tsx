@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import QRCode from 'qrcode';
 import { access } from '@/lib/session';
-import { Buddy, PALETTES } from '@/components/Buddy';
+import { Buddy } from '@/components/Buddy';
+import { PALETTES } from '@/lib/palettes';
 import { Notice } from '@/components/Notice';
 import { PrintButton } from '@/components/PrintButton';
 import { LOGIN_URL, buddyUrl } from '@/lib/config';

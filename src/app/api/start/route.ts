@@ -3,7 +3,7 @@ import { createPending, setSessionId } from '@/lib/buddies';
 import { checkName, cleanName } from '@/lib/names';
 import { activateBuddy } from '@/lib/activate';
 import { rateLimited, validEmail } from '@/lib/guard';
-import { PALETTES } from '@/components/Buddy';
+import { PALETTES } from '@/lib/palettes';
 import { APP_URL, DEV_CHECKOUT, HQ_PRODUCT, PRICES, TRIAL_DAYS } from '@/lib/config';
 
 export const runtime = 'nodejs';

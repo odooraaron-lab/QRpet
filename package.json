@@ -10,6 +10,7 @@
     "stripe:listen": "stripe listen --forward-to localhost:3000/api/stripe/webhook"
   },
   "dependencies": {
+    "@rive-app/react-webgl2": "^4.35.0",
     "next": "^15.5.26",
     "postgres": "^3.4.9",
     "qrcode": "^1.5.4",

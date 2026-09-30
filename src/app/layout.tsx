@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { APP_URL, PRODUCT, BRAND, HQ_PRODUCT } from '@/lib/config';
 import './globals.css';
+import '@/components/buddy/buddy.css';
 
 export const metadata: Metadata = {
   metadataBase: new URL(APP_URL),

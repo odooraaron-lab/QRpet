@@ -10,7 +10,7 @@ This repo is phase 2 of that plan, the **working web MVP**. Decisions taken:
 | --- | --- |
 | Buddy addresses | `teddy.myqr.co.nz`. The party site (party-kit) owns the wildcard and forwards buddy names here; both apps check each other before giving out a name. |
 | Prices and trial | $4.99 a month or $39 a year, 7 days free (all set by env vars). |
-| Character art | Stand-in: an SVG character with CSS animation (`src/components/Buddy.tsx`), same poses and moods the Rive rig will have. Swapping in the designer's Rive file replaces that one component. |
+| Character art | The designer's package (`src/components/buddy/`): a detailed SVG buddy now, which switches to `qr-buddy.riv` automatically once it's delivered (see README, Rive animation). |
 | Sound | Stand-in: synthesised in the browser (Web Audio, C major pentatonic, volume-capped) plus the device's speech voice for numbers and parent messages (`src/lib/sound.ts`). |
 
 ## Built

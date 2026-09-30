@@ -27,6 +27,7 @@ const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
 const SONG_OF: Record<string, string> = { 'song-hello': 'hello', 'song-star': 'star', 'song-rain': 'rain', 'song-goodnight': 'goodnight' };
 const MOVE_ACTION: Record<string, Action> = { wave: 'wave', bounce: 'bounce', clap: 'clap', spin: 'spin', dance: 'dance', jump: 'jump', hug: 'hug' };
 const HATCH_TAPS = 8;
+const STAGE_INDEX: Record<string, number> = { Egg: 0, Hatchling: 0, Sprout: 1, Buddy: 2, Star: 3, Legend: 4 };
 const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
 
 /** One or two words for today's new thing. */
@@ -95,10 +96,12 @@ export function Player({ initial, base, tv = false }: { initial: BuddyState; bas
     setTimeout(() => setWords((w) => w.filter((x) => x.id !== id)), ms);
   }, []);
   /** Plays a move, then back to idle (unless another move started meanwhile). */
+  const [actionKey, setActionKey] = useState(0);
   const act = useCallback(async (next: Action, ms = 1600, m?: Mood) => {
     const my = ++actSeq.current;
     if (m) setMood(m);
     setAction(next);
+    setActionKey(my); // replays the same move if it comes twice in a row
     await wait(ms);
     if (actSeq.current === my) setAction('idle');
   }, []);
@@ -429,11 +432,6 @@ export function Player({ initial, base, tv = false }: { initial: BuddyState; bas
       const idle = Date.now() - lastInput.current;
       if (p === 'play' && !busy.current && idle > 120_000) { setPhase('doze'); setMood('asleep'); setAction('idle'); return; }
       if (p !== 'play' || busy.current) return;
-      if (Math.random() < 0.12) {
-        const el = document.querySelector('.world .qb') as HTMLElement | null;
-        el?.style.setProperty('--look-x', `${Math.round(Math.random() * 10 - 5)}px`);
-        el?.style.setProperty('--look-y', `${Math.round(Math.random() * 6 - 3)}px`);
-      }
       if (Math.random() < 0.05) {
         const moves = a.moves.map((m) => MOVE_ACTION[m]).filter(Boolean);
         busy.current = true;
@@ -473,7 +471,7 @@ export function Player({ initial, base, tv = false }: { initial: BuddyState; bas
       ) : (
         <div className="stage" ref={stageRef} onPointerDown={(e) => e.stopPropagation()}>
           {room.has('rug') && <div className="rug" />}
-          <Buddy colour={s.colour} mood={sleeping && phase !== 'doze' && mood !== 'sleepy' ? 'asleep' : mood} action={action} accessory={accessory} glow={glow} scale={a.stage.scale} sticker={room.has('milestone-30')} onTummy={touchBuddy} onHead={touchBuddy} />
+          <Buddy live colour={s.colour} mood={sleeping && phase !== 'doze' && mood !== 'sleepy' ? 'asleep' : mood} action={action} actionKey={actionKey} accessory={accessory} glow={glow} stage={STAGE_INDEX[a.stage.name] ?? 0} talking={mood === 'sing'} sticker={room.has('milestone-30')} onTummy={touchBuddy} onHead={touchBuddy} />
         </div>
       )}
 

@@ -5,7 +5,7 @@ import {
   settingsOf, updateBuddy, devices, type Settings,
 } from '@/lib/buddies';
 import { PARENT_COMMANDS } from '@/lib/commands';
-import { PALETTES } from '@/components/Buddy';
+import { PALETTES } from '@/lib/palettes';
 import { abilities } from '@/lib/growth';
 import { unlocks } from '@/lib/buddies';
 import { rateLimited } from '@/lib/guard';

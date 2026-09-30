@@ -14,7 +14,7 @@ const clean = (v: unknown, max: number) => String(v ?? '').replace(/[^\p{L}\p{M}
 export async function POST(req: Request) {
   if (rateLimited(req, 'start', 20)) return Response.json({ error: 'Too many tries. Please wait a few minutes.' }, { status: 429 });
   const b = await req.json().catch(() => ({}));
-  if (b.company) return Response.json({ error: 'Something went wrong.' }, { status: 400 });
+  if (b.trap) return Response.json({ error: 'Something went wrong. Please refresh the page and try again.' }, { status: 400 });
   const slug = cleanName(b.name);
   const check = await checkName(slug);
   if (!check.ok) return Response.json({ error: check.reason, field: 'name' }, { status: 409 });

@@ -41,7 +41,7 @@ export function StartForm({ domain, prices, trialDays, initialPlan, cancelled }:
     try {
       const r = await fetch('/api/start', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: slug, colour, childName, ageBand, email, plan, company: (e.target as HTMLFormElement).company?.value }),
+        body: JSON.stringify({ name: slug, colour, childName, ageBand, email, plan, trap: ((e.target as HTMLFormElement).elements.namedItem('qb_trap_x7') as HTMLInputElement | null)?.value }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.url) { setError(j.error || 'Something went wrong. Please try again.'); setBusy(false); return; }
@@ -103,7 +103,8 @@ export function StartForm({ domain, prices, trialDays, initialPlan, cancelled }:
           </div>
           {trialDays > 0 && <span className="help">First {trialDays} days free. Cancel any time before and you won’t be charged.</span>}
         </div>
-        <input type="text" name="company" tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: -9999 }} />
+        {/* Spam trap: people never see it. The name is deliberately one that browser autofill doesn't recognise. */}
+        <input type="text" name="qb_trap_x7" tabIndex={-1} autoComplete="new-password" aria-hidden="true" style={{ position: 'absolute', left: -9999 }} />
         <button className="btn block" disabled={busy || !slug || !email}>{busy ? 'One moment…' : trialDays > 0 ? `Start ${trialDays} free days` : 'Continue to payment'}</button>
         <p className="help center" style={{ marginTop: 10 }}>Secure payment by Stripe. No ads, no chat, nothing to buy inside.</p>
       </form>
